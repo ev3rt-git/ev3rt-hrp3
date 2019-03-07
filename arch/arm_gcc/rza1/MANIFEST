@@ -1,0 +1,22 @@
+PACKAGE hrp3_arch_arm_gcc
+
+MANIFEST
+Makefile.chip
+chip_kernel.h
+chip_kernel.trb
+chip_kernel_impl.c
+chip_kernel_impl.h
+chip_rename.def
+chip_rename.h
+chip_stddef.h
+chip_sym.def
+chip_timer.c
+chip_timer.cfg
+chip_timer.h
+chip_unrename.h
+rza1.h
+scif.h
+tSCIF.c
+tSCIF.cdl
+tSIOPortRZA1.cdl
+tSIOPortRZA1Main_inline.h

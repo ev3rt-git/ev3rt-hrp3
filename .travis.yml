@@ -1,0 +1,18 @@
+sudo: required
+dist: trusty
+language: cpp
+
+compiler: gcc
+
+before_install:
+# -  sudo apt-get remove binutils-arm-none-eabi gcc-arm-none-eabi
+ - sudo add-apt-repository ppa:team-gcc-arm-embedded/ppa -y # -qq is for travis CI
+ - sudo apt-get update
+ - sudo apt-get install gcc-arm-embedded u-boot-tools --allow-unauthenticated -y
+
+before_script:
+ - cd sdk/firmware
+ - make img=loader
+ - cd ../workspace
+
+script: make app=helloev3

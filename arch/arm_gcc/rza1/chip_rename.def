@@ -1,0 +1,13 @@
+# chip_kernel_impl.c
+chip_initialize
+chip_terminate
+
+# chip_timer.c
+target_hrt_initialize
+target_hrt_terminate
+target_hrt_handler
+target_totimer_initialize
+target_totimer_terminate
+target_totimer_handler
+
+INCLUDE "core"

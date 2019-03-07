@@ -1,0 +1,54 @@
+# -*- coding: utf-8 -*-
+# 
+#		パス2の生成スクリプトのチップ依存部（RZ/A1用）
+# 
+
+# 
+#  使用できる割込み番号とそれに対応する割込みハンドラ番号
+# 
+if $TOPPERS_RZA1H
+  $INTNO_VALID = [ *(0..586) ]
+else
+  $INTNO_VALID = [ *(0..537) ]
+end
+$INHNO_VALID = $INTNO_VALID
+
+#
+#  ターゲット定義の割込み要求ライン属性
+#
+$TARGET_INTATR = $TA_NEGEDGE|$TA_POSEDGE|$TA_BOTHEDGE
+
+# 
+#  生成スクリプトのコア依存部
+# 
+IncludeTrb("core_kernel.trb")
+
+#
+#  時間パーティショニングとオーバランハンドラを同時に使用していないか
+#  のチェック（オーバラン機能拡張使用時のみ）
+#
+if $TOPPERS_SUPPORT_OVRHDR
+  if $cfgData[:DEF_SCY].size > 0 && $cfgData[:DEF_OVR].size() > 0
+    error("E_NOSPT: temporal partitioning functions and overrun handler" \
+						" cannot be used at the same time on this target")
+  end
+end
+
+#
+#  割込み要求ライン属性に関するターゲット依存のエラーチェック
+#
+$cfgData[:CFG_INT].each do |_, params|
+  if $INTNO_IRQ0 <= params[:intno] && params[:intno] <= $INTNO_IRQ7
+    # IRQ割込みの場合
+    #（TA_EDGEがセットされている場合）
+    if (params[:intatr] & $TA_EDGE) != 0
+      error_illegal_sym("E_RSATR", params, :intatr, :intno)
+    end
+  else
+    # その他の割込みの場合
+    #（TA_NEGEDGE，TA_POSEDGE，TARGET_BOTHEDGEがセットされている場合）
+    if (params[:intatr] & $TARGET_INTATR) != 0
+      error_illegal_sym("E_RSATR", params, :intatr, :intno)
+    end
+  end
+end

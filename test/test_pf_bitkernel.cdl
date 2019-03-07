@@ -1,0 +1,23 @@
+/*
+ *		テスト用プラットフォーム（カーネルの整合性検査付き）のコンポー
+ *		ネント記述ファイル
+ *
+ *  $Id: test_pf_bitkernel.cdl 285 2018-03-21 02:55:49Z ertl-hiro $
+ */
+
+/*
+ *  テスト用プラットフォームのコンポーネント記述ファイル
+ */
+import("test_pf.cdl");
+
+/*
+ *  カーネルの整合性検査のセルタイプと組上げ記述
+ */
+[singleton]
+celltype tBitKernel {
+	entry	sBuiltInTest	eBuiltInTest;
+};
+
+cell tBitKernel BitKernel {					/* テストサービスに接続 */
+	eBuiltInTest <= rKernelDomain::TestService.cBuiltInTest;
+};

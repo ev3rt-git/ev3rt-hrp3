@@ -1,0 +1,181 @@
+# -*- coding: utf-8 -*-
+#
+#   TOPPERS/HRP Kernel
+#       Toyohashi Open Platform for Embedded Real-Time Systems/
+#       High Reliable system Profile Kernel
+# 
+#   Copyright (C) 2016-2019 by Embedded and Real-Time Systems Laboratory
+#               Graduate School of Information Science, Nagoya Univ., JAPAN
+# 
+#   上記著作権者は，以下の(1)〜(4)の条件を満たす場合に限り，本ソフトウェ
+#   ア（本ソフトウェアを改変したものを含む．以下同じ）を使用・複製・改
+#   変・再配布（以下，利用と呼ぶ）することを無償で許諾する．
+#   (1) 本ソフトウェアをソースコードの形で利用する場合には，上記の著作
+#       権表示，この利用条件および下記の無保証規定が，そのままの形でソー
+#       スコード中に含まれていること．
+#   (2) 本ソフトウェアを，ライブラリ形式など，他のソフトウェア開発に使
+#       用できる形で再配布する場合には，再配布に伴うドキュメント（利用
+#       者マニュアルなど）に，上記の著作権表示，この利用条件および下記
+#       の無保証規定を掲載すること．
+#   (3) 本ソフトウェアを，機器に組み込むなど，他のソフトウェア開発に使
+#       用できない形で再配布する場合には，次のいずれかの条件を満たすこ
+#       と．
+#     (a) 再配布に伴うドキュメント（利用者マニュアルなど）に，上記の著
+#         作権表示，この利用条件および下記の無保証規定を掲載すること．
+#     (b) 再配布の形態を，別に定める方法によって，TOPPERSプロジェクトに
+#         報告すること．
+#   (4) 本ソフトウェアの利用により直接的または間接的に生じるいかなる損
+#       害からも，上記著作権者およびTOPPERSプロジェクトを免責すること．
+#       また，本ソフトウェアのユーザまたはエンドユーザからのいかなる理
+#       由に基づく請求からも，上記著作権者およびTOPPERSプロジェクトを
+#       免責すること．
+#
+#   本ソフトウェアは，無保証で提供されているものである．上記著作権者お
+#   よびTOPPERSプロジェクトは，本ソフトウェアに関して，特定の使用目的
+#   に対する適合性も含めて，いかなる保証も行わない．また，本ソフトウェ
+#   アの利用により直接的または間接的に生じたいかなる損害に関しても，そ
+#   の責任を負わない．
+#
+#   $Id: domain.trb 648 2019-01-14 05:26:19Z ertl-hiro $
+#
+
+#
+#		保護ドメインに関する生成スクリプト
+#
+
+#
+#  保護ドメインの数とIDの定義（kernel_cfg.h）
+#
+$kernelCfgH.add("#define TNUM_DOMID\t#{$udomainList.size}")
+
+$udomainList.each do |key|
+  domid = $domData[key][:domid]
+  $kernelCfgH.add("#define #{domid}\t#{domid.val}")
+end
+$kernelCfgH.add()
+
+#
+#  システム動作モードの数とIDの定義（kernel_cfg.h）
+#
+if $cfgData[:DEF_SCY].size == 0
+  # 時間パーティショニングを使用しない場合
+  $kernelCfgH.add2("#define TNUM_SOMID\t0")
+else
+  # 時間パーティショニングを使用する場合
+  $kernelCfgH.add("#define TNUM_SOMID\t#{$cfgData[:CRE_SOM].size}")
+
+  $cfgData[:CRE_SOM].sort.each do |_, params|
+    $kernelCfgH.add("#define #{params[:somid]}\t#{params[:somid].val}")
+  end
+  $kernelCfgH.add()
+end
+
+#
+#  時間パーティショニングに関する情報の生成
+#
+$kernelCfgC.comment_header("Temporal Partitioning Functions")
+
+if $cfgData[:DEF_SCY].size == 0
+  #
+  #  時間パーティショニングを使用しない場合
+  #
+  $kernelCfgC.add(<<EOS)
+const RELTIM _kernel_system_cyctim = 0U;
+const uint_t _kernel_tnum_schedcb = 0U;
+TOPPERS_EMPTY_LABEL(SCHEDCB, _kernel_schedcb_table);
+TOPPERS_EMPTY_LABEL(const TWDINIB, _kernel_twdinib_table);
+const ID _kernel_tmax_somid = 0;
+const SOMINIB *const _kernel_p_inisom = NULL;
+TOPPERS_EMPTY_LABEL(const SOMINIB, _kernel_sominib_table);
+EOS
+else
+  #
+  #  時間パーティショニングを使用する場合
+  #
+
+  #
+  #  システム周期
+  #
+  $kernelCfgC.add2("const RELTIM _kernel_system_cyctim = " \
+								"#{$cfgData[:DEF_SCY][1][:scyctim]};")
+
+  #
+  #  スケジューリング単位管理ブロックの数
+  #
+  $kernelCfgC.add2("const uint_t _kernel_tnum_schedcb = #{$schedcbList.size};")
+
+  #
+  #  スケジューリング単位管理ブロックの生成
+  #
+  $kernelCfgC.add2("SCHEDCB _kernel_schedcb_table[#{$schedcbList.size}];")
+
+  #
+  #  タイムウィンドウ通知の通知情報の処理
+  #
+  $twdList.each do |key, params|
+    if params.has_key?(:nfymode)
+      params[:twdid] = "TWD#{key}"
+      params[:domain] = params[:domid].val
+      params[:nfyhdr] = generateNotifyHandler(key, params, :twdid)
+    else
+      # 通知方法の指定の記述を省略した場合［NGKI5097］
+      params[:nfyhdr] = "NULL"
+      params[:par1] = "0"
+    end
+  end
+
+  #
+  #  タイムウィンドウ初期化ブロックの生成
+  #
+  if $twdList.size > 0
+    $kernelCfgC.add("const TWDINIB _kernel_twdinib_table" \
+										"[#{$twdList.size}] = {")
+    $twdList.each_with_index do |(_, params), index|
+      $kernelCfgC.add(",") if index > 0
+      $kernelCfgC.append("\t{ #{params[:twdlen]}, " \
+				"&(_kernel_dominib_table[INDEX_DOM(#{params[:domid]})]), " \
+				"(intptr_t)(#{params[:par1]}), #{params[:nfyhdr]} }")
+    end
+    $kernelCfgC.add
+    $kernelCfgC.add2("};")
+  else
+    $kernelCfgC.add2("TOPPERS_EMPTY_LABEL(const TWDINIB, " \
+										"_kernel_twdinib_table);")
+  end
+
+  #
+  #  システム動作モードIDの最大値
+  #
+  $kernelCfgC.add2("const ID _kernel_tmax_somid = " \
+								"(TMIN_SOMID + TNUM_SOMID - 1);")
+
+  #
+  #  初期システム動作モードのID
+  #
+  $kernelCfgC.append("const SOMINIB *const _kernel_p_inisom = ")
+  if defined?($inisom)
+    $kernelCfgC.add2("&(_kernel_sominib_table[INDEX_SOM(#{$inisom})]);")
+  else
+    $kernelCfgC.add2("NULL;")
+  end
+
+  #
+  #  システム動作モード初期化ブロックの生成
+  #
+  $kernelCfgC.add("const SOMINIB _kernel_sominib_table[TNUM_SOMID + 1] = {")
+  $cfgData[:CRE_SOM].sort.each do |_, params|
+    $kernelCfgC.add("\t{ &(_kernel_twdinib_table[#{params[:twdidx]}]), " \
+				"&(_kernel_sominib_table[INDEX_SOM(#{params[:nxtsom]})]) },")
+  end
+  $kernelCfgC.add("\t{ &(_kernel_twdinib_table[#{$twdList.size}]), NULL }")
+  $kernelCfgC.add2("};")
+end
+
+#
+#  保護ドメイン管理情報の生成
+#
+if !$USE_LATERPASS_DOMINIB
+  GenerateDominib($kernelCfgC)
+else
+  GenerateDominib($kernelMemC)
+end

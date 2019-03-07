@@ -1,0 +1,457 @@
+# -*- coding: utf-8 -*-
+#
+#   TOPPERS/HRP Kernel
+#       Toyohashi Open Platform for Embedded Real-Time Systems/
+#       High Reliable system Profile Kernel
+# 
+#   Copyright (C) 2016-2018 by Embedded and Real-Time Systems Laboratory
+#               Graduate School of Information Science, Nagoya Univ., JAPAN
+# 
+#   上記著作権者は，以下の(1)〜(4)の条件を満たす場合に限り，本ソフトウェ
+#   ア（本ソフトウェアを改変したものを含む．以下同じ）を使用・複製・改
+#   変・再配布（以下，利用と呼ぶ）することを無償で許諾する．
+#   (1) 本ソフトウェアをソースコードの形で利用する場合には，上記の著作
+#       権表示，この利用条件および下記の無保証規定が，そのままの形でソー
+#       スコード中に含まれていること．
+#   (2) 本ソフトウェアを，ライブラリ形式など，他のソフトウェア開発に使
+#       用できる形で再配布する場合には，再配布に伴うドキュメント（利用
+#       者マニュアルなど）に，上記の著作権表示，この利用条件および下記
+#       の無保証規定を掲載すること．
+#   (3) 本ソフトウェアを，機器に組み込むなど，他のソフトウェア開発に使
+#       用できない形で再配布する場合には，次のいずれかの条件を満たすこ
+#       と．
+#     (a) 再配布に伴うドキュメント（利用者マニュアルなど）に，上記の著
+#         作権表示，この利用条件および下記の無保証規定を掲載すること．
+#     (b) 再配布の形態を，別に定める方法によって，TOPPERSプロジェクトに
+#         報告すること．
+#   (4) 本ソフトウェアの利用により直接的または間接的に生じるいかなる損
+#       害からも，上記著作権者およびTOPPERSプロジェクトを免責すること．
+#       また，本ソフトウェアのユーザまたはエンドユーザからのいかなる理
+#       由に基づく請求からも，上記著作権者およびTOPPERSプロジェクトを
+#       免責すること．
+# 
+#   本ソフトウェアは，無保証で提供されているものである．上記著作権者お
+#   よびTOPPERSプロジェクトは，本ソフトウェアに関して，特定の使用目的
+#   に対する適合性も含めて，いかなる保証も行わない．また，本ソフトウェ
+#   アの利用により直接的または間接的に生じたいかなる損害に関しても，そ
+#   の責任を負わない．
+# 
+#   $Id: arm_mmu.trb 648 2019-01-14 05:26:19Z ertl-hiro $
+# 
+
+#
+#		ARM MMUのアドレス変換テーブルの作成
+#
+
+$kernelMemC.comment_header("Address Translation Table for ARM MMU")
+
+#
+#  ARMセクション（1MB単位のメモリ領域）に関する情報の前処理
+#
+# $armSec[sEntry][:pt_entry]：使用するページテーブル領域のエントリ番号
+#							  複数のページテーブル領域を使用する場合はその先頭
+# $armSec[sEntry][:global]：ページテーブルをすべての保護ドメインで共有
+# $armSec[sEntry][:private]：ページテーブルを属する保護ドメイン以外で共有
+# $armSec[sEntry][:domain]：属する保護ドメイン以外で共有する場合の属する
+#							保護ドメイン
+# ページテーブルを使用しないセクションに対しては，$armSec[sEntry]を設定
+# しない．
+#
+$armSec = {}
+
+def clearGlobalPrivate(sEntry, params)
+  if params.has_key?(:accatr)
+    if !params[:global]
+      # ユーザドメインによってメモリ保護属性が異なるメモリ保護単位を含
+      # む場合
+      $armSec[sEntry][:global] = false
+
+      if !params[:private]
+        $armSec[sEntry][:private] = false
+      elsif $domain > 0
+        if params[:domain] != $domain
+          # 属する保護ドメインが一致しない場合
+          $armSec[sEntry][:private] = false
+        end
+      else
+        $domain = params[:domain]
+      end
+    end
+  end
+end
+
+ptEntry = 0
+params = $memProt[mpkey = 1]
+1.upto($ARM_SECTION_TABLE_ENTRY).each do |sEntry|
+  endaddr = sEntry * $ARM_SECTION_SIZE
+  # baseaddr = endaddr - $ARM_SECTION_SIZE
+
+  if params[:aendaddr] < endaddr
+    # セクション中に複数のメモリ保護単位がある場合
+    $armSec[sEntry] = {}
+    $armSec[sEntry][:global] = true
+    $armSec[sEntry][:private] = true
+    $domain = $TDOM_NONE
+    while params[:aendaddr] < endaddr
+      clearGlobalPrivate(sEntry, params)
+      params = $memProt[mpkey += 1]
+    end
+    clearGlobalPrivate(sEntry, params)
+
+    # 使用するページテーブル領域数の決定
+    $armSec[sEntry][:pt_entry] = ptEntry
+    if $udomainList.empty?
+      #	ユーザドメインがない場合
+      ptEntry += 1
+    elsif $armSec[sEntry][:global]
+      # ページテーブルをすべての保護ドメインで共有する場合
+      ptEntry += 1
+    elsif $armSec[sEntry][:private]
+      # ページテーブルを属する保護ドメイン以外で共有する場合
+      $armSec[sEntry][:domain] = $domain
+      if $udomainList.size > 1
+        ptEntry += 2
+      else
+        ptEntry += 1
+      end
+    else
+      # ページテーブルを共有しない場合
+      ptEntry += $udomainList.size
+    end
+  end
+  if params[:aendaddr] == endaddr
+    params = $memProt[mpkey += 1]
+  end
+end
+
+#
+#  ページテーブル領域の確保数に関する処理
+#
+if $TOPPERS_ML_AUTO
+  #
+  #  自動メモリ配置の場合
+  #
+  $kernelMemC.add(<<EOS)
+#ifndef ARM_PAGE_TABLE_RATIO
+#define ARM_PAGE_TABLE_RATIO	100
+#endif /* ARM_PAGE_TABLE_RATIO */
+
+#ifndef ARM_PAGE_TABLE_NUM
+#define ARM_PAGE_TABLE_NUM		((#{$maxNumPageTable} * ARM_PAGE_TABLE_RATIO + 99) / 100)
+#endif /* ARM_PAGE_TABLE_NUM */
+EOS
+
+  # ページテーブル領域の使用状況の表示
+  numPageTable = ($maxNumPageTable * $ARM_PAGE_TABLE_RATIO + 99) / 100
+  STDERR.puts("== Number of used page tables: #{ptEntry} ==")
+  STDERR.puts(sprintf("== %.1f%% of the allocated page table area is used. ==",
+											ptEntry.to_f * 100 / numPageTable))
+
+  # ページテーブル領域が足りない場合のエラー処理
+  if ptEntry > numPageTable
+    error("increase ARM_PAGE_TABLE_RATIO or ARM_PAGE_TABLE_NUM " \
+													"and build again.")
+  end
+
+  # ページテーブル領域の先頭番地の取得
+  $pageTable = SYMBOL("_kernel_page_table")
+else
+  #
+  #  手動メモリ配置の場合
+  #
+  $kernelMemC.add(<<EOS)
+#ifndef ARM_PAGE_TABLE_NUM
+#define ARM_PAGE_TABLE_NUM		#{ptEntry}
+#endif /* ARM_PAGE_TABLE_NUM */
+EOS
+end
+
+# セクションテーブルのサイズ
+if $udomainList.empty?
+  numSectionTable = "1"
+else
+  numSectionTable = "TNUM_DOMID"
+end
+
+#
+#  テーブルエントリ生成のための共通関数
+#
+# dscrxxには，"DSCR1"，"DSCR2S"，"DSCR2L"のいずれかを渡す．
+#
+def GenerateEntry(dscrxx, domain, params)
+  if dscrxx == "DSCR1"
+    dscr = "DSCR1"
+    armvx = "ARM"
+  else
+    dscr = "DSCR2"
+    if $TARGET_ARCH_ARM < 6
+      armvx = "ARMV5"
+    else
+      armvx = "ARMV6"
+    end
+  end
+  if domain > 0
+    domptn = (1 << (domain - 1))
+  else
+    domptn = 0
+  end
+
+  # nGビットの設定（ARMv6以降）
+  if $TARGET_ARCH_ARM >= 6 && !params[:global]
+    $kernelMemC.append("ARMV6_MMU_#{dscr}_NONGLOBAL|")
+  end
+
+  if $TARGET_ARCH_ARM < 6
+    # APの設定（ARMv5以前）
+    if (params[:acptn1] & domptn) != 0
+      $kernelMemC.append("ARMV5_MMU_#{dscr}_AP11|")
+    elsif (params[:acptn2] & domptn) != 0
+      $kernelMemC.append("ARMV5_MMU_#{dscr}_AP10|")
+    else
+      $kernelMemC.append("ARMV5_MMU_#{dscr}_AP01|")
+    end
+  else
+    # APの設定（ARMv6以降）
+    if (params[:accatr] & $TA_NOWRITE) != 0
+      if (params[:acptn2] & domptn) != 0
+        $kernelMemC.append("ARMV6_MMU_#{dscr}_AP111|")
+      else
+        $kernelMemC.append("ARMV6_MMU_#{dscr}_AP101|")
+      end
+    else
+      if (params[:acptn1] & domptn) != 0
+        $kernelMemC.append("ARMV6_MMU_#{dscr}_AP011|")
+      elsif (params[:acptn2] & domptn) != 0
+        $kernelMemC.append("ARMV6_MMU_#{dscr}_AP010|")
+      else
+        $kernelMemC.append("ARMV6_MMU_#{dscr}_AP001|")
+      end
+    end
+  end
+
+  if $TARGET_ARCH_ARM < 6
+    # Cビット，Bビットの設定（ARMv5以前）
+    if (params[:accatr] & $TA_SORDER) != 0
+      $kernelMemC.append("ARM_MMU_#{dscr}_CB00|")
+    elsif (params[:accatr] & ($TA_IODEV|$TA_UNCACHE)) != 0
+      $kernelMemC.append("ARM_MMU_#{dscr}_CB01|")
+    elsif (params[:accatr] & $TA_WTHROUGH) != 0
+      $kernelMemC.append("ARM_MMU_#{dscr}_CB10|")
+    else
+      $kernelMemC.append("ARM_MMU_#{dscr}_CB11|")
+    end
+  else
+    # TEX，Cビット，Bビットの設定（ARMv6以降）
+    if (params[:accatr] & $TA_SORDER) != 0
+      $kernelMemC.append("#{armvx}_MMU_#{dscrxx}_TEX000|ARM_MMU_#{dscr}_CB00|")
+    elsif (params[:accatr] & $TA_IODEV) != 0
+      if (params[:accatr] & $TA_NONSHARED) == 0
+        $kernelMemC.append("#{armvx}_MMU_#{dscrxx}_TEX000|ARM_MMU_#{dscr}_CB01|")
+      else
+        $kernelMemC.append("#{armvx}_MMU_#{dscrxx}_TEX010|ARM_MMU_#{dscr}_CB00|")
+      end
+    elsif (params[:accatr] & $TA_UNCACHE) != 0
+      $kernelMemC.append("#{armvx}_MMU_#{dscrxx}_TEX001|ARM_MMU_#{dscr}_CB00|")
+    elsif (params[:accatr] & $TA_WTHROUGH) != 0
+      $kernelMemC.append("#{armvx}_MMU_#{dscrxx}_TEX000|ARM_MMU_#{dscr}_CB10|")
+    else
+      $kernelMemC.append("#{armvx}_MMU_#{dscrxx}_TEX001|ARM_MMU_#{dscr}_CB11|")
+    end
+  end
+
+  # XNビットの設定（ARMv6以降）
+  if $TARGET_ARCH_ARM >= 6 && (params[:accatr] & $TA_EXEC) == 0
+    $kernelMemC.append("ARMV6_MMU_#{dscrxx}_NOEXEC|")
+  end
+
+  # Sビットの設定（ARMv6以降，マルチプロセッサで意味がある）
+  if $TARGET_ARCH_ARM >= 6 && (params[:accatr] & $TA_NONSHARED) == 0
+    $kernelMemC.append("#{armvx}_MMU_#{dscr}_SHARED|")
+  end
+end
+
+#
+#  セクションテーブルの生成
+#
+
+# セクションエントリの生成
+def GenerateSectionEntry(domain, baseaddr, params)
+  $kernelMemC.append("ARM_MMU_DSCR1_SECTION|")
+  GenerateEntry("DSCR1", domain, params)
+  $kernelMemC.append(sprintf("0x%08xU", baseaddr + params[:poffset]))
+end
+
+# スーパーセクションエントリの生成
+def GenerateSsectionEntry(domain, baseaddr, params)
+  $kernelMemC.append("ARM_MMU_DSCR1_SSECTION|")
+  GenerateEntry("DSCR1", domain, params)
+  $kernelMemC.append(sprintf("0x%08xU", \
+			(baseaddr + params[:poffset]) & ~($ARM_SSECTION_SIZE - 1)))
+end
+
+# 1つのドメインに対するセクションテーブルの生成
+def GenerateSectionTable(domain)
+  params = $memProt[mpkey = 1]
+  $kernelMemC.add("\t{")
+  1.upto($ARM_SECTION_TABLE_ENTRY).each do |sEntry|
+    endaddr = sEntry * $ARM_SECTION_SIZE
+    baseaddr = endaddr - $ARM_SECTION_SIZE
+    $kernelMemC.append("\t\t")
+    if $armSec.has_key?(sEntry)
+      $kernelMemC.append("ARM_MMU_DSCR1_PAGETABLE")
+      if $udomainList.empty?
+        # ユーザドメインがない場合
+        ptEntry = $armSec[sEntry][:pt_entry]
+      elsif $armSec[sEntry][:global]
+        # ページテーブルをすべての保護ドメインで共有する場合
+        ptEntry = $armSec[sEntry][:pt_entry]
+      elsif $armSec[sEntry][:private]
+        # ページテーブルを属する保護ドメイン以外で共有する場合
+        if $armSec[sEntry][:domain] == domain
+          ptEntry = $armSec[sEntry][:pt_entry]
+        else
+          ptEntry = $armSec[sEntry][:pt_entry] + 1
+        end
+      else
+        # ページテーブルを共有しない場合
+        ptEntry = $armSec[sEntry][:pt_entry] + (domain - 1)
+      end
+      if $TOPPERS_ML_AUTO
+        $kernelMemC.append(sprintf("|0x%08xU", \
+					$pageTable + $ARM_PAGE_TABLE_SIZE * ptEntry))
+        $kernelMemC.append(" /* page_table[#{ptEntry}] */")
+      else
+        $kernelMemC.append(" + ((uintptr_t) &_kernel_page_table[#{ptEntry}])")
+      end
+    else
+      params = $memProt[mpkey]
+      if params.has_key?(:accatr)
+        ss_baseaddr = baseaddr & ~($ARM_SSECTION_SIZE - 1)
+        if $USE_ARM_SSECTION \
+				&& params[:baseaddr] <= ss_baseaddr \
+				&& ss_baseaddr + $ARM_SSECTION_SIZE <= params[:aendaddr] \
+				&& (params[:poffset] & ($ARM_SSECTION_SIZE - 1)) == 0
+          GenerateSsectionEntry(domain, baseaddr, params)
+        else
+          GenerateSectionEntry(domain, baseaddr, params)
+        end
+      else
+        $kernelMemC.append("ARM_MMU_DSCR1_FAULT")
+      end
+    end
+    while params[:aendaddr] <= endaddr
+      params = $memProt[mpkey += 1]
+      break if params.nil?
+    end
+    $kernelMemC.add(", /* #{sprintf("0x%08x", baseaddr)} */")
+  end
+  $kernelMemC.append("\t}")
+end
+
+# セクションテーブルの生成
+$kernelMemC.add("const uint32_t _kernel_section_table" \
+					"[#{numSectionTable}][ARM_SECTION_TABLE_ENTRY] " \
+					"__attribute__((aligned(ARM_SECTION_TABLE_ALIGN)," \
+					"section(\".page_table\"),nocommon)) = {")
+if !$udomainList.empty?
+  $udomainList.each_with_index do |domain, index|
+    $kernelMemC.add(",") if index > 0
+    GenerateSectionTable(domain)
+  end
+else
+  GenerateSectionTable(0)
+end
+$kernelMemC.add
+$kernelMemC.add2("};")
+
+#
+#  ページテーブルの生成
+#
+
+# ページエントリの生成
+def GeneratePageEntry(domain, baseaddr, params)
+  $kernelMemC.append("ARM_MMU_DSCR2_SMALL|")
+  GenerateEntry("DSCR2S", domain, params)
+  $kernelMemC.append(sprintf("0x%08xU", baseaddr + params[:poffset]))
+end
+
+# ラージページエントリの生成
+def GenerateLpageEntry(domain, baseaddr, params)
+  $kernelMemC.append("ARM_MMU_DSCR2_LARGE|")
+  GenerateEntry("DSCR2L", domain, params)
+  $kernelMemC.append(sprintf("0x%08xU", \
+			(baseaddr + params[:poffset]) & ~($ARM_LPAGE_SIZE - 1)))
+end
+
+# 1つのドメインに対するページテーブルの生成
+def GeneratePageTable(domain, sMpkey, sBaseaddr)
+  params = $memProt[mpkey = sMpkey]
+  $kernelMemC.add("\t{")
+  1.upto($ARM_PAGE_TABLE_ENTRY).each do |entry|
+    endaddr = sBaseaddr + entry * $ARM_PAGE_SIZE
+	baseaddr = endaddr - $ARM_PAGE_SIZE
+    $kernelMemC.append("\t\t")
+    if params.has_key?(:accatr)
+      lpBaseaddr = (baseaddr & ~($ARM_LPAGE_SIZE - 1))
+      if params[:baseaddr] <= lpBaseaddr \
+				&& lpBaseaddr + $ARM_LPAGE_SIZE <= params[:aendaddr] \
+				&& (params[:poffset] & ~($ARM_LPAGE_SIZE - 1)) == 0
+        GenerateLpageEntry(domain, baseaddr, params)
+      else
+        GeneratePageEntry(domain, baseaddr, params)
+      end
+    else
+      $kernelMemC.append("ARM_MMU_DSCR2_FAULT")
+    end
+    if params[:aendaddr] == endaddr
+      params = $memProt[mpkey += 1]
+    end
+    $kernelMemC.add(", /* #{sprintf("0x%08x", baseaddr)} */")
+  end
+  $kernelMemC.add("\t},")
+end
+
+# ページテーブルの生成
+$kernelMemC.add("const uint32_t _kernel_page_table" \
+					"[ARM_PAGE_TABLE_NUM][ARM_PAGE_TABLE_ENTRY] " \
+					"__attribute__((aligned(ARM_PAGE_TABLE_ALIGN)," \
+					"section(\".page_table\"),nocommon)) = {")
+params = $memProt[s_mpkey = 1]
+1.upto($ARM_SECTION_TABLE_ENTRY).each do |sEntry|
+  s_endaddr = sEntry * $ARM_SECTION_SIZE
+  s_baseaddr = s_endaddr - $ARM_SECTION_SIZE
+
+  if $armSec.has_key?(sEntry)
+    if $udomainList.empty?
+      # ユーザドメインがない場合
+      GeneratePageTable(0, s_mpkey, s_baseaddr)
+    elsif $armSec[sEntry][:global]
+      # ページテーブルをすべての保護ドメインで共有する場合
+      GeneratePageTable(1, s_mpkey, s_baseaddr)
+    elsif $armSec[sEntry][:private]
+      # ページテーブルを属する保護ドメイン以外で共有する場合
+      # 属する保護ドメイン用のページテーブルを最初に生成
+      GeneratePageTable($armSec[sEntry][:domain], s_mpkey, s_baseaddr)
+
+      # 他の保護ドメイン用のページテーブルを次に生成
+      if $udomainList.size > 1
+        # domptnを，属する保護ドメイン以外の保護ドメインに設定
+        if $armSec[sEntry][:domain] != 1
+          GeneratePageTable(1, s_mpkey, s_baseaddr)
+        else
+          GeneratePageTable(2, s_mpkey, s_baseaddr)
+        end
+      end
+    else
+      # ページテーブルを共有しない場合
+      $udomainList.each do |domain|
+        GeneratePageTable(domain, s_mpkey, s_baseaddr)
+      end
+    end
+  end
+  while params[:aendaddr] <= s_endaddr
+    params = $memProt[s_mpkey += 1]
+    break if params.nil?
+  end
+end
+$kernelMemC.add("};")

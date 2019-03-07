@@ -1,0 +1,33 @@
+#
+#  Makefile for EV3 Platform
+#  This file should be included from 'Makefile.target'
+#  to use the platform properly.
+#
+
+CDEFS += -DBUILD_EV3_PLATFORM
+INCLUDES += -I$(TARGETDIR)/drivers
+KERNEL_DIRS += $(TARGETDIR)/drivers
+
+APPL_COBJS += tlsf.o target_serial.o target_serial_dbsio.o
+
+#
+#  Include Makefile for API and device drivers
+#
+include $(TARGETDIR)/drivers/common/Makefile
+include $(TARGETDIR)/drivers/bluetooth/Makefile
+include $(TARGETDIR)/drivers/brick/Makefile
+include $(TARGETDIR)/drivers/console/Makefile
+include $(TARGETDIR)/drivers/fatfs/Makefile
+include $(TARGETDIR)/drivers/gpio/Makefile
+include $(TARGETDIR)/drivers/lcd/Makefile
+include $(TARGETDIR)/drivers/newlib/Makefile
+include $(TARGETDIR)/drivers/sensor/analog/Makefile
+include $(TARGETDIR)/drivers/sensor/uart/Makefile
+include $(TARGETDIR)/drivers/sensor/i2c/Makefile
+include $(TARGETDIR)/drivers/soc/Makefile
+include $(TARGETDIR)/drivers/sound/Makefile
+include $(TARGETDIR)/drivers/motor/Makefile
+include $(TARGETDIR)/drivers/usbmsc/Makefile
+include $(TARGETDIR)/pil/Makefile
+include $(TARGETDIR)/platform/Makefile
+

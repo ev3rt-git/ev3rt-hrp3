@@ -1,0 +1,10 @@
+CRE_TSK #tskid* { .tskatr &exinf &task +itskpri .stksz &stk? .sstksz? &sstk? }
+CRE_SEM #semid* { .sematr .isemcnt .maxsem }
+CRE_FLG #flgid* { .flgatr .iflgptn }
+CRE_DTQ #dtqid* { .dtqatr .dtqcnt &dtqmb? }
+CRE_PDQ #pdqid* { .pdqatr .pdqcnt +maxdpri &pdqmb? }
+CRE_MTX #mtxid* { .mtxatr +ceilpri? }
+CRE_CYC #cycid* { .cycatr { .nfymode &par1 &par2? &par3? &par4? } .cyctim .cycphs }
+CRE_ALM #almid* { .almatr { .nfymode &par1 &par2? &par3? &par4? } }
+ATT_SEC $secname { .mematr $regname? } {? .acptn1 .acptn2 .acptn3 .acptn4 }
+ATT_MOD $modname {? .acptn1 .acptn2 .acptn3 .acptn4 }

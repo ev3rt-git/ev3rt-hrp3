@@ -1,0 +1,42 @@
+../../cfg_test/pass2_dom1.cfg:82: error: E_RSATR: LMT_DOM must be within a protection domain
+../../cfg_test/pass2_dom1.cfg:64: error: E_RSATR: DEF_SCY must be outside of protection domains
+../../cfg_test/pass2_dom1.cfg:39: error: E_RSATR: CRE_SOM must be outside of protection domains
+../../cfg_test/pass2_dom1.cfg:40: error: E_RSATR: ATT_TWD must be outside of protection domains
+../../cfg_test/pass2_dom1.cfg:32: error: E_RSATR: ATT_REG must be outside of protection domains
+../../cfg_test/pass2_dom1.cfg:63: error: E_RSATR: ATT_REG must be outside of protection domains
+../../cfg_test/pass2_dom1.cfg:70: error: E_RSATR: CRE_TSK of TASK2 must be within a protection domain
+../../cfg_test/pass2_dom1.cfg:49: error: E_RSATR: SAC_TSK of TASK1 must be within the same protection domain with CRE_TSK
+../../cfg_test/pass2_dom1.cfg:50: error: E_RSATR: SAC_SEM of SEM1 must be within the same protection domain with CRE_SEM
+../../cfg_test/pass2_dom1.cfg:51: error: E_RSATR: SAC_FLG of FLG1 must be within the same protection domain with CRE_FLG
+../../cfg_test/pass2_dom1.cfg:52: error: E_RSATR: SAC_DTQ of DTQ1 must be within the same protection domain with CRE_DTQ
+../../cfg_test/pass2_dom1.cfg:53: error: E_RSATR: SAC_PDQ of PDQ1 must be within the same protection domain with CRE_PDQ
+../../cfg_test/pass2_dom1.cfg:54: error: E_RSATR: SAC_MTX of MTX1 must be within the same protection domain with CRE_MTX
+../../cfg_test/pass2_dom1.cfg:55: error: E_RSATR: SAC_MBF of MBF1 must be within the same protection domain with CRE_MBF
+../../cfg_test/pass2_dom1.cfg:56: error: E_RSATR: SAC_MPF of MPF1 must be within the same protection domain with CRE_MPF
+../../cfg_test/pass2_dom1.cfg:30: error: E_OACV: nfymode `TNFY_HANDLER' is not permitted in user domains in CRE_CYC of CYC2
+../../cfg_test/pass2_dom1.cfg:71: error: E_RSATR: CRE_CYC of CYC3 must be within a protection domain
+../../cfg_test/pass2_dom1.cfg:72: error: E_RSATR: CRE_CYC of CYC4 must be within a protection domain
+../../cfg_test/pass2_dom1.cfg:57: error: E_RSATR: SAC_CYC of CYC1 must be within the same protection domain with CRE_CYC
+../../cfg_test/pass2_dom1.cfg:31: error: E_OACV: nfymode `TNFY_HANDLER' is not permitted in user domains in CRE_ALM of ALM2
+../../cfg_test/pass2_dom1.cfg:73: error: E_RSATR: CRE_ALM of ALM3 must be within a protection domain
+../../cfg_test/pass2_dom1.cfg:74: error: E_RSATR: CRE_ALM of ALM4 must be within a protection domain
+../../cfg_test/pass2_dom1.cfg:58: error: E_RSATR: SAC_ALM of ALM1 must be within the same protection domain with CRE_ALM
+../../cfg_test/pass2_dom1.cfg:33: error: E_RSATR: CFG_INT must be within the kernel domain
+../../cfg_test/pass2_dom1.cfg:34: error: E_RSATR: CFG_INT must be within the kernel domain
+../../cfg_test/pass2_dom1.cfg:76: error: E_RSATR: CFG_INT must be within the kernel domain
+../../cfg_test/pass2_dom1.cfg:77: error: E_RSATR: CFG_INT must be within the kernel domain
+../../cfg_test/pass2_dom1.cfg:36: error: E_RSATR: DEF_INH of `INHNO1' must be within the kernel domain
+../../cfg_test/pass2_dom1.cfg:79: error: E_RSATR: DEF_INH of `INHNO2' must be within the kernel domain
+../../cfg_test/pass2_dom1.cfg:35: error: E_RSATR: CRE_ISR of `ISR1' must be within the kernel domain
+../../cfg_test/pass2_dom1.cfg:78: error: E_RSATR: CRE_ISR of `ISR2' must be within the kernel domain
+../../cfg_test/pass2_dom1.cfg:37: error: E_RSATR: DEF_EXC of `CPUEXC1' must be within the kernel domain
+../../cfg_test/pass2_dom1.cfg:80: error: E_RSATR: DEF_EXC of `CPUEXC2' must be within the kernel domain
+../../cfg_test/pass2_dom1.cfg:38: error: E_RSATR: DEF_SVC of `1' must be within the kernel domain
+../../cfg_test/pass2_dom1.cfg:81: error: E_RSATR: DEF_SVC of `2' must be within the kernel domain
+../../cfg_test/pass2_dom1.cfg:75: error: E_RSATR: SAC_SYS must be within the kernel domain
+../../cfg_test/pass2_dom1.cfg:85: error: E_RSATR: DEF_ICS must be within the kernel domain
+../../cfg_test/pass2_dom1.cfg:41: error: E_RSATR: ATT_INI must be within the kernel domain
+../../cfg_test/pass2_dom1.cfg:86: error: E_RSATR: ATT_INI must be within the kernel domain
+../../cfg_test/pass2_dom1.cfg:42: error: E_RSATR: ATT_TER must be within the kernel domain
+../../cfg_test/pass2_dom1.cfg:87: error: E_RSATR: ATT_TER must be within the kernel domain
+make: *** [kernel_cfg.timestamp] Error 1

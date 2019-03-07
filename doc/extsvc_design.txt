@@ -1,0 +1,208 @@
+
+		TOPPERSプロジェクト 設計メモ
+		拡張サービスコールの記述方法
+
+		作成者: 高田広章（名古屋大学）
+		最終更新: 2016年3月13日
+
+○メモの位置付け
+
+このメモは，TOPPERS第3世代カーネル（ITRON系）において，保護機能がない場
+合（ASP3カーネル）とある場合（HRP3カーネル）で，拡張サービスコールの記
+述を共通化する方法について検討するものである．
+
+TECSによる拡張サービスコールの生成も，ここで検討する方法に従う（ただし，
+関数名の付け方はTECSのコンベンションに従う）．
+
+○例による考察
+
+syslog_wri_logを例として，どのような記述が必要になるかを整理する．
+
+syslog_wri_logのC言語インタフェースは次の通り．
+
+	ER	syslog_wri_log(uint_t prio, const SYSLOG *p_syslog)
+
+●保護機能がない場合（ASP3カーネル）
+
+ヘッダファイルには次の記述を含める．
+
+--------------------
+extern ER	syslog_wri_log(uint_t prio, const SYSLOG *p_syslog) throw();
+--------------------
+
+拡張サービスコールの実装は，次のようになる．
+
+--------------------
+ER
+syslog_wri_log(uint_t prio, const SYSLOG *p_syslog)
+{
+	………
+}
+--------------------
+
+●保護機能がある場合（HRP3カーネル）
+
+まず，機能コードの定義が必要である．
+
+--------------------
+#define TFN_SYSLOG_WRI_LOG		(1)
+--------------------
+
+ヘッダファイルに含める記述として，まず，カーネルドメインの処理単位から
+拡張サービスコールを関数呼出しによって呼び出す場合（TOPPERS_SVC_CALLが
+定義されている場合）のために，次の記述を含める．
+
+--------------------
+extern ER	_syslog_wri_log(uint_t prio, const SYSLOG *p_syslog) throw();
+
+#ifdef TOPPERS_SVC_CALL
+
+#define syslog_wri_log	_syslog_wri_log
+
+#endif /* TOPPERS_SVC_CALL */
+--------------------
+
+次に，拡張サービスコールをソフトウェア割込みによって呼び出す場合
+（TOPPERS_SVC_CALLが定義されていない場合）のために，次の記述を含める．
+
+--------------------
+#ifndef TOPPERS_SVC_CALL
+
+Inline ER
+syslog_wri_log(uint_t prio, const SYSLOG *p_syslog)
+{
+	return((ER) cal_svc(TFN_SYSLOG_WRI_LOG, (intptr_t) prio,
+										(intptr_t) p_syslog, 0, 0, 0));
+}
+
+#endif /* TOPPERS_SVC_CALL */
+--------------------
+
+さらに，拡張サービスコールとして登録する関数の宣言を含める．
+
+--------------------
+extern ER_UINT	extsvc_syslog_wri_log(intptr_t prio, intptr_t p_syslog,
+						intptr_t par3, intptr_t par4, intptr_t par5, ID cdmid);
+--------------------
+
+拡張サービスコールの実装は，次のようになる．
+
+--------------------
+ER
+_syslog_wri_log(uint_t prio, const SYSLOG *p_syslog)
+{
+	………（保護機能がない場合と同じ処理内容）
+}
+
+ER_UINT
+extsvc_syslog_wri_log(intptr_t prio, intptr_t p_syslog, intptr_t par3,
+									intptr_t par4, intptr_t par5, ID cdmid)
+{
+	ER_UINT	ercd;
+
+	/*
+	 *  ここに保護違反チェックコードを入れる（cdmidを参照する）
+	 */
+	if (/* cdmidからアクセスできない（syslog_wri_logでは不要）*/) {
+		ercd = E_OACV;
+	}
+	else if (!EXTSVC_PROBE_MEM_READ(p_syslog, SYSLOG)) {
+		ercd = E_MACV;
+	}
+	else {
+		ercd = (ER_UINT) _syslog_wri_log((uint_t) prio,
+											(const SYSLOG) *p_syslog);
+	}
+	return(ercd);
+}
+--------------------
+
+システムコンフィギュレーションファイルには，次の記述を含める．
+
+--------------------
+KERNEL_DOMAIN {
+	DEF_SVC(TFN_SYSLOG_WRI_LOG, { TA_NULL, extsvc_syslog_wri_log,
+                                                    SSZ_SYSLOG_WRI_LOG });
+}
+--------------------
+
+●保護機能がない場合とある場合の両方に対応できる記述
+
+ヘッダファイルは次の通り．
+
+--------------------
+#ifndef TOPPERS_SUPPORT_PROTECT
+
+extern ER	syslog_wri_log(uint_t prio, const SYSLOG *p_syslog) throw();
+
+#else /* TOPPERS_SUPPORT_PROTECT */
+
+extern ER	_syslog_wri_log(uint_t prio, const SYSLOG *p_syslog) throw();
+
+#ifndef TOPPERS_SVC_CALL
+
+Inline ER
+syslog_wri_log(uint_t prio, const SYSLOG *p_syslog)
+{
+	return((ER) cal_svc(TFN_SYSLOG_WRI_LOG, (intptr_t) prio,
+										(intptr_t) p_syslog, 0, 0, 0));
+}
+
+#else /* TOPPERS_SVC_CALL */
+
+#define syslog_wri_log	_syslog_wri_log
+
+#endif /* TOPPERS_SVC_CALL */
+
+extern ER_UINT	extsvc_syslog_wri_log(intptr_t prio, intptr_t p_syslog,
+						intptr_t par3, intptr_t par4, intptr_t par5, ID cdmid);
+
+#endif /* TOPPERS_SUPPORT_PROTECT */
+--------------------
+
+実装ファイルは次の通り．
+
+--------------------
+/*
+ *  以下の3行は，TOPPERS_SVC_CALLを付けてコンパイルしている場合は不要
+ */
+#ifdef TOPPERS_SUPPORT_PROTECT
+#define syslog_wri_log	_syslog_wri_log
+#endif /* TOPPERS_SUPPORT_PROTECT */
+
+ER
+syslog_wri_log(uint_t prio, const SYSLOG *p_syslog)
+{
+	………
+}
+
+#ifdef TOPPERS_SUPPORT_PROTECT
+
+ER_UINT
+extsvc_syslog_wri_log(intptr_t prio, intptr_t p_syslog, intptr_t par3,
+									intptr_t par4, intptr_t par5, ID cdmid)
+{
+	ER_UINT	ercd;
+
+	/*
+	 *  ここに保護違反チェックコードを入れる（cdmidを参照する）
+	 */
+	if (/* cdmidからアクセスできない（syslog_wri_logでは不要）*/) {
+		ercd = E_OACV;
+	}
+	else if (!EXTSVC_PROBE_MEM_READ(p_syslog, SYSLOG)) {
+		ercd = E_MACV;
+	}
+	else {
+		ercd = (ER_UINT) _syslog_wri_log((uint_t) prio,
+											(const SYSLOG) *p_syslog);
+	}
+	return(ercd);
+}
+
+#endif /* TOPPERS_SUPPORT_PROTECT */
+--------------------
+
+なお，システムコンフィギュレーションファイルを共通化することはできない．
+
+以上

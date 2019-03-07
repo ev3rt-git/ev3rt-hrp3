@@ -1,0 +1,7 @@
+E_PACKAGE hrp3_allinone
+VERSION %date
+
+INCLUDE MANIFEST
+INCLUDE arch/arm_gcc/MANIFEST
+INCLUDE tecsgen/MANIFEST_for_hrp3
+INCLUDE MANIFEST.early

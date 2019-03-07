@@ -1,0 +1,38 @@
+# ==================== 
+# Handle CRE_SEM
+# Input:
+#     $moduleCfgC
+#     $moduleCfgH
+#     $modCfgTab
+# Output:
+#     Semaphore IDs in 'module_cfg.h/.c'
+#     _module_csem_tab in 'module_cfg.c'
+#     $modCfgTab (updated)
+# ====================
+
+$cfgData[:CRE_SEM].each{|_, params|
+  # Check user domain
+  if $domData[params[:domain]][:domid].str != "TDOM_APP"
+    error_ercd("E_NOSPT", params, "Semaphore must belong to TDOM_APP in dynamic loading mode")
+  end
+
+  # Generate IDs
+  semid = params[:semid].str
+  $moduleCfgH.add("extern ID _module_id_#{semid};")
+  $moduleCfgH.add("#define #{semid} ((const ID)(_module_id_#{semid}))")
+  $moduleCfgC.add(<<EOS)
+ID _module_id_#{semid} __attribute__((section (".module.text")));
+EOS
+}
+
+#
+# Generate '_module_csem_tab' and update '_module_cfg_tab'
+#
+if $cfgData[:CRE_SEM].size > 0
+$moduleCfgC.add("static const T_CSEM _module_csem_tab[#{$cfgData[:CRE_SEM].size}] = {")
+$cfgData[:CRE_SEM].each_with_index{|(_, params), index|
+  $moduleCfgC.add("\t{ #{params[:sematr]}, #{params[:isemcnt]}, #{params[:maxsem]} },")
+  $modCfgTab.push({:sfncd => "TSFN_CRE_SEM", :argument => "&_module_csem_tab[#{index}]", :retvalptr => "&_module_id_#{params[:semid]}"})
+}
+$moduleCfgC.add2("};")
+end

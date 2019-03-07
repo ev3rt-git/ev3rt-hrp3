@@ -1,0 +1,424 @@
+# -*- coding: utf-8 -*-
+#
+#   TOPPERS/HRP Kernel
+#       Toyohashi Open Platform for Embedded Real-Time Systems/
+#       High Reliable system Profile Kernel
+# 
+#   Copyright (C) 2015 by FUJI SOFT INCORPORATED, JAPAN
+#   Copyright (C) 2015-2019 by Embedded and Real-Time Systems Laboratory
+#               Graduate School of Information Science, Nagoya Univ., JAPAN
+# 
+#   上記著作権者は，以下の(1)〜(4)の条件を満たす場合に限り，本ソフトウェ
+#   ア（本ソフトウェアを改変したものを含む．以下同じ）を使用・複製・改
+#   変・再配布（以下，利用と呼ぶ）することを無償で許諾する．
+#   (1) 本ソフトウェアをソースコードの形で利用する場合には，上記の著作
+#       権表示，この利用条件および下記の無保証規定が，そのままの形でソー
+#       スコード中に含まれていること．
+#   (2) 本ソフトウェアを，ライブラリ形式など，他のソフトウェア開発に使
+#       用できる形で再配布する場合には，再配布に伴うドキュメント（利用
+#       者マニュアルなど）に，上記の著作権表示，この利用条件および下記
+#       の無保証規定を掲載すること．
+#   (3) 本ソフトウェアを，機器に組み込むなど，他のソフトウェア開発に使
+#       用できない形で再配布する場合には，次のいずれかの条件を満たすこ
+#       と．
+#     (a) 再配布に伴うドキュメント（利用者マニュアルなど）に，上記の著
+#         作権表示，この利用条件および下記の無保証規定を掲載すること．
+#     (b) 再配布の形態を，別に定める方法によって，TOPPERSプロジェクトに
+#         報告すること．
+#   (4) 本ソフトウェアの利用により直接的または間接的に生じるいかなる損
+#       害からも，上記著作権者およびTOPPERSプロジェクトを免責すること．
+#       また，本ソフトウェアのユーザまたはエンドユーザからのいかなる理
+#       由に基づく請求からも，上記著作権者およびTOPPERSプロジェクトを
+#       免責すること．
+# 
+#   本ソフトウェアは，無保証で提供されているものである．上記著作権者お
+#   よびTOPPERSプロジェクトは，本ソフトウェアに関して，特定の使用目的
+#   に対する適合性も含めて，いかなる保証も行わない．また，本ソフトウェ
+#   アの利用により直接的または間接的に生じたいかなる損害に関しても，そ
+#   の責任を負わない．
+# 
+#   $Id: task.trb 665 2019-02-03 17:06:18Z ertl-hiro $
+# 
+
+#
+#		タスク管理モジュールの生成スクリプト
+#
+
+class TaskObject < KernelObject
+  def initialize()
+    super("tsk", "task", true, "t")
+  end
+
+  def checkMinSystemStksz(sstksz, params)
+    # システムスタックサイズの最小値のチェック
+    if sstksz < $TARGET_MIN_SSTKSZ
+      error_ercd("E_PAR", params, "system stack size `#{sstksz}' " \
+								"is too small in %apiname of %tskid")
+    end
+  end
+
+  def prepare(key, params)
+    # パラメータが省略された時のデフォルト値の設定
+    if $TOPPERS_ML_AUTO
+      params[:stk] ||= "NULL"
+    else
+      params[:stk] ||= NumStr.new(0, "NULL")
+    end
+    params[:sstk] ||= "NULL"
+
+    # tskatrが無効の場合（E_RSATR）［NGKI1028］［NGKI3526］［HRPS0005］
+    # ［NGKI1016］
+    #（TA_ACT，TA_NOACTQUE，TARGET_TSKATR以外のビットがセットされている場合）
+    if (params[:tskatr] & ~($TA_ACT|$TA_NOACTQUE|$TARGET_TSKATR)) != 0
+      error_illegal_id("E_RSATR", params, :tskatr, :tskid)
+    end
+
+    # itskpriが有効範囲外の場合（E_PAR）［NGKI1034］
+    #（TMIN_TPRI <= itskpri && itskpri <= TMAX_TPRIでない場合）
+    if !($TMIN_TPRI <= params[:itskpri] && params[:itskpri] <= $TMAX_TPRI)
+      error_illegal_id("E_PAR", params, :itskpri, :tskid)
+    end
+
+    if params[:domain] == $TDOM_KERNEL
+      #
+      #  システムタスクのスタック領域の生成とエラーチェック
+      #
+      # sstkにNULL以外を指定した場合（E_PAR）［NGKI1068］
+      if params[:sstk] != "NULL"
+        error_illegal_id("E_PAR", params, :sstk, :tskid)
+      end
+
+      # stkszが0の場合（E_PAR）［NGKI1042］
+      if params[:stksz] == 0
+        error_wrong_id("E_PAR", params, :stksz, :tskid, "zero")
+      end
+
+      if params[:stk] == "NULL" || params[:stk] == 0
+        #
+        #  stkが省略されているか，NULLの場合の処理
+        #
+        if params.has_key?(:sstksz) && params[:sstksz] != 0
+          # sstkszに0以外の値を指定した場合の処理
+          # システムスタック領域のサイズを求める［NGKI1069］
+          sstksz = NumStr.new(params[:stksz] + params[:sstksz], \
+							"(#{params[:stksz]}) + (#{params[:sstksz]})")
+        else
+          # sstkszが省略されているか，0を指定した場合の処理［NGKI1072］
+          sstksz = params[:stksz]
+        end
+        # sstkszがターゲット定義の最小値よりも小さい（E_PAR）［NGKI1042］
+        checkMinSystemStksz(sstksz, params)
+
+        # システムスタック領域の確保［NGKI1049］［NGKI1041］
+        sstkName = "_kernel_sstack_#{params[:tskid]}"
+        params[:tinib_sstksz] = AllocSystemStack(sstkName, sstksz)
+        params[:tinib_sstk] = sstkName
+      else
+        #
+        #  stkがNULLでない場合の処理
+        #
+        # sstkszに0以外の値を指定した場合（E_PAR）［NGKI1071］
+        if params.has_key?(:sstksz) && params[:sstksz] != 0
+          error_ercd("E_PAR", params, "%%sstksz must be zero " \
+											"in %apiname of `%tskid'")
+        end
+
+        # stkszがターゲット定義の最小値（TARGET_MIN_SSTKSZ，未定義の場
+        # 合は1）よりも小さい場合（E_PAR）［NGKI1042］
+        checkMinSystemStksz(params[:stksz], params)
+
+        # stkszがターゲット定義の制約に合致しない場合（E_PAR）［NGKI1056］
+        if (params[:stksz] & ($CHECK_SSTKSZ_ALIGN - 1)) != 0
+          error_wrong_id("E_PAR", params, :stksz, :tskid, "not aligned")
+        end
+
+        # stkがターゲット定義の制約に合致しない場合（E_PAR）［NGKI1056］
+        if $TOPPERS_ML_MANUAL
+          if (params[:stk] & ($CHECK_SSTACK_ALIGN - 1)) != 0
+            error_wrong_id("E_PAR", params, :stksz, :tskid, "not aligned")
+          end
+        end
+
+        # システムスタック領域の設定［NGKI1041］
+        params[:tinib_sstksz] = params[:stksz]
+        params[:tinib_sstk] = "(void *)(#{params[:stk]})"
+      end
+
+      # ユーザスタック領域の設定
+      params[:tinib_ustksz] = 0
+      params[:tinib_ustk] = "NULL"
+    else
+      #
+      #  ユーザタスクのシステムスタック領域の生成とエラーチェック
+      #
+      if params[:sstk] == "NULL"
+        #
+        #  sstkが省略されているか，NULLの場合の処理
+        #
+        if params.has_key?(:sstksz)
+          # sstkszが省略されていない場合の処理
+          sstksz = params[:sstksz]
+
+          # sstkszがターゲット定義の最小値よりも小さい（E_PAR）［NGKI1044］
+          checkMinSystemStksz(sstksz, params)
+        else
+          # sstkszが省略されている場合の処理［NGKI1063］
+          sstksz = NumStr.new($DEFAULT_SSTKSZ, "DEFAULT_SSTKSZ")
+        end
+
+        # システムスタック領域の確保［NGKI1061］［NGKI1043］
+        sstkName = "_kernel_sstack_#{params[:tskid]}"
+        params[:tinib_sstksz] = AllocSystemStack(sstkName, sstksz)
+        params[:tinib_sstk] = sstkName
+      else
+        #
+        #  sstkがNULLでない場合の処理
+        #
+		# sstkszが省略されている場合
+        if !params.has_key?(:sstksz)
+          error_api(params, "sstksz must be specified in %apiname of %tskid")
+        end
+
+        # sstkszがターゲット定義の最小値（TARGET_MIN_SSTKSZ，未定義の
+        # 場合は1）よりも小さい場合（E_PAR）［NGKI1044］
+        checkMinSystemStksz(params[:sstksz], params)
+
+        # sstkszがターゲット定義の制約に合致しない場合（E_PAR）［NGKI1065］
+        if (params[:sstksz] & ($CHECK_SSTKSZ_ALIGN - 1)) != 0
+          error_wrong_id("E_PAR", params, :sstksz, :tskid, "not aligned")
+        end
+
+        # システムスタック領域の設定［NGKI1043］
+        params[:tinib_sstksz] = params[:sstksz]
+        params[:tinib_sstk] = "(void *)(#{params[:sstk]})"
+      end
+
+      #
+      #  ユーザタスクのユーザスタック領域の生成とエラーチェック
+      #
+      # stkszがターゲット定義の最小値（TARGET_MIN_USTKSZ，未定義の場合
+      # は1）よりも小さい場合（E_PAR）［NGKI1042］
+      if params[:stksz] < $TARGET_MIN_USTKSZ
+        error_wrong_id("E_PAR", params, :stksz, :tskid, "too small")
+      end
+
+      if params[:stk] == "NULL" || params[:stk] == 0
+        #
+        #  stkが省略されているか，NULLの場合の処理
+        #
+        # 手動メモリ配置の場合（E_PAR）［NGKI3907］
+        if $TOPPERS_ML_MANUAL
+          error_ercd("E_PAR", params, "%%stk must not be null " \
+						"under manual memory layout in %apiname of %tskid")
+        end
+
+        # ユーザスタック領域の確保［NGKI1049］［NGKI1041］
+        ustkName = "_kernel_ustack_#{params[:tskid]}"
+        ustkSecname = SecnameUserStack(params[:tskid])
+        params[:tinib_ustksz] = \
+					AllocUserStack(ustkName, params[:stksz], ustkSecname)
+        params[:tinib_ustk] = ustkName
+      else
+        #
+        #  stkがNULLでないの場合の処理
+        #
+
+        # stkszがターゲット定義の制約に合致しない場合（E_PAR）［NGKI1056］
+        if (params[:stksz] & ($CHECK_USTKSZ_ALIGN - 1)) != 0
+          error_wrong_id("E_PAR", params, :stksz, :tskid, "not aligned")
+        end
+
+        # stkがターゲット定義の制約に合致しない場合（E_PAR）［NGKI1056］
+        if $TOPPERS_ML_MANUAL
+          if (params[:stk] & ($CHECK_USTACK_ALIGN - 1)) != 0
+            error_wrong_id("E_PAR", params, :stk, :tskid, "not aligned")
+          end
+        end
+
+        # ユーザスタック領域の設定［NGKI1041］
+        params[:tinib_ustksz] = params[:stksz]
+        params[:tinib_ustk] = "(void *)(#{params[:stk]})"
+      end
+
+      # メモリオブジェクト情報の生成［NGKI1051］［NGKI1058］
+      params2 = {}
+      params2[:type] = :USTACK
+      params2[:size] = params[:tinib_ustksz]
+      params2[:domain] = params[:domain]
+      if params[:stk] == "NULL" || params[:stk] == 0
+        params2[:linker] = true
+        params2[:memreg] = $standardMemreg[params[:domain]][:stdram]
+        params2[:secname] = ustkSecname
+        params2[:stkorder] = params[:tskid]
+      else
+        params2[:base] = params[:stk]
+        params2[:linker] = false
+      end
+      if defined?($targetMematrUstack)
+        params2[:mematr] = $targetMematrUstack
+      else
+        params2[:mematr] = $mematrNoinitSec
+      end
+      params2[:acptn1] = $defaultAcptn[params[:domain]]
+      params2[:acptn2] = $defaultAcptn[params[:domain]]
+      params2[:acptn4] = params[:acptn4] || $defaultAcptn[params[:domain]]
+      params2[:apiname] = params[:apiname]
+      params2[:_file_] = params[:_file_]
+      params2[:_line_] = params[:_line_]
+      $memObj[$lastMOKey += 1] = params2
+
+      if params2[:linker]
+        $ustackListLinker.push($lastMOKey)
+      else
+        $ustackListUser.push($lastMOKey)
+      end
+    end
+
+    # ターゲット依存の処理（ターゲット依存のエラーチェックを含む）
+    if defined? TargetTaskPrepare()
+      TargetTaskPrepare(key, params)
+    end
+  end
+
+  def generateInib(key, params)
+    if $USE_TSKINICTXB
+      tskinictxb = GenerateTskinictxb(key, params)
+    else
+      tskinictxb = "#{params[:tinib_sstksz]}, #{params[:tinib_sstk]}, " \
+						"#{params[:tinib_ustksz]}, #{params[:tinib_ustk]}"
+    end
+    return("(#{$domData[params[:domain]][:domid]}), " \
+			"(#{params[:tskatr]}), (intptr_t)(#{params[:exinf]}), " \
+			"(TASK)(#{params[:task]}), INT_PRIORITY(#{params[:itskpri]}), " \
+			"#{tskinictxb}, #{GenerateAcvct(params)}")
+  end
+end
+
+# タスクが1つも登録されていない場合［NGKI0033］
+if $cfgData[:CRE_TSK].size() == 0
+  error("no task is registered")
+end
+
+#
+#  タスク管理に関する情報の生成
+#
+$kernelCfgC.comment_header("Task Management Functions")
+TaskObject.new.generate()
+
+# タスク生成順序テーブルの生成
+$kernelCfgC.add("const ID _kernel_torder_table[TNUM_STSKID] = { ")
+$kernelCfgC.append("\t")
+$cfgData[:CRE_TSK].each_with_index do |(_, params), index|
+  $kernelCfgC.append(", ") if index > 0
+  $kernelCfgC.append("#{params[:tskid]}")
+end
+$kernelCfgC.add
+$kernelCfgC.add2("};")
+
+#
+#  レッドゾーン方式におけるユーザスタック領域の配置順序の決定
+#
+# ここで配置順序を決定するのは，コンフィギュレータが割り付けるユーザス
+# タック領域のみであり，アプリケーションが指定したものは対象としない．
+#
+if $USE_REDZONE && $ustackListLinker.size > 0
+  #
+  #  対象となるメモリリージョンとユーザスタック領域の特定
+  #
+  # ustackListMemreg[memreg]：コンフィギュレータが割り付けるユーザス
+  #							  タック領域のメモリリージョン毎のリスト
+  #
+  ustackListMemreg = Hash.new {|hash, memreg| hash[memreg] = []}
+  $ustackListLinker.each do |key|
+    ustackListMemreg[$memObj[key][:memreg]].push(key)
+  end
+
+  #
+  #  メモリリージョン毎の配置順序の決定
+  #
+  ustackListMemreg.keys.sort.each do |memreg|
+    #
+    #  ドメイン毎のユーザスタック領域のリストの作成と数のカウント
+    #
+    # totalNumUstack：ユーザスタック領域の数の合計
+    # ustackListDomain[domid]：ドメイン毎のユーザスタック領域のリスト
+    # maxNumUstack：ドメイン毎のユーザスタック領域の数の最大値
+    # maxUstackDomain：ユーザスタック領域の数が最大であるドメイン
+    #
+    totalNumUstack = ustackListMemreg[memreg].size
+
+    ustackListDomain = Hash.new {|hash, key| hash[key] = []}
+    ustackListMemreg[memreg].each do |key|
+      ustackListDomain[$memObj[key][:domain]].push(key)
+    end
+
+    maxNumUstack = 0
+    maxUstackDomain = 0			# 変数のスコープを広げるための定義
+    ustackListDomain.each do |domid, list|
+      if maxNumUstack < list.size
+        maxNumUstack = list.size
+        maxUstackDomain = domid
+      end
+    end
+
+    #
+    #  ダミースタック領域の追加
+    #
+    num_dummy = maxNumUstack * 2 - 1 - totalNumUstack
+    if num_dummy > 0
+      1.upto(num_dummy).each do |dummy|
+        # ダミータスク名
+        dummy_name = "TOPPERS_#{$cfgData[:ATT_REG][memreg][:regname]}" \
+														+ "_DUMMY#{dummy}"
+        # ダミースタック領域の確保
+        ustkName = "_kernel_ustack_#{dummy_name}"
+        ustkSecname = SecnameUserStack(dummy_name)
+        AllocDummyUserStack(ustkName, $TARGET_DUMMY_STKSZ, ustkSecname)
+
+        # ダミースタック領域のメモリオブジェクト情報の生成
+        # ダミースタック領域は保護ドメインに属さないもの（無所属）とする
+        params2 = {}
+        params2[:type] = :USTACK
+        params2[:size] = $TARGET_DUMMY_STKSZ
+        params2[:linker] = true
+        params2[:domain] = $TDOM_NONE
+        params2[:memreg] = memreg
+        params2[:secname] = ustkSecname
+        if defined?($targetMematrUstack)
+          params2[:mematr] = $targetMematrUstack
+        else
+          params2[:mematr] = $mematrNoinitSec
+        end
+        params2[:acptn1] = $acptnKernel
+        params2[:acptn2] = $acptnKernel
+        params2[:acptn4] = $acptnKernel
+        $memObj[$lastMOKey += 1] = params2
+
+        ustackListDomain[$TDOM_NONE].push($lastMOKey)
+        ustackListMemreg[memreg].push($lastMOKey)
+        $ustackListLinker.push($lastMOKey)
+      end
+      totalNumUstack += num_dummy
+    end
+
+    # 配置順序を順に割り当てる
+    stkorder = 0
+    while stkorder < ustackListMemreg[memreg].size
+      ustackListDomain.keys.sort.each do |domid|
+        if ustackListDomain[domid].size > 0
+          if domid != maxUstackDomain && maxNumUstack * 2 > totalNumUstack
+            $memObj[ustackListDomain[maxUstackDomain].shift][:stkorder] = \
+															(stkorder += 1)
+            totalNumUstack -= 1
+            maxNumUstack -= 1
+          end
+          $memObj[ustackListDomain[domid].shift][:stkorder] = (stkorder += 1)
+          totalNumUstack -= 1
+          if domid == maxUstackDomain
+            maxNumUstack -= 1
+          end
+        end
+      end
+    end
+  end
+end

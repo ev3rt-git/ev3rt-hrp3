@@ -1,0 +1,36 @@
+# -*- coding: utf-8 -*-
+#
+#		オフセットファイル生成用Rubyテンプレート（ARM用）
+#
+#  $Id: core_offset.trb 606 2018-12-13 16:13:01Z ertl-hiro $
+#
+
+#
+#  ターゲット非依存部のインクルード
+#
+IncludeTrb("kernel/genoffset.trb")
+
+#
+#  フィールドのオフセットの定義の生成
+#
+$offsetH.append(<<EOS)
+#define TCB_p_tinib		#{$offsetof_TCB_p_tinib}
+#define TCB_p_dominib	#{$offsetof_TCB_p_dominib}
+#define TCB_svclevel	#{$offsetof_TCB_svclevel}
+#define TCB_sp			#{$offsetof_TCB_sp}
+#define TCB_pc			#{$offsetof_TCB_pc}
+#define TINIB_domid		#{$offsetof_TINIB_domid}
+#define TINIB_tskatr	#{$offsetof_TINIB_tskatr}
+#define TINIB_exinf		#{$offsetof_TINIB_exinf}
+#define TINIB_task		#{$offsetof_TINIB_task}
+#define TINIB_sstksz	#{$offsetof_TINIB_sstksz}
+#define TINIB_sstk		#{$offsetof_TINIB_sstk}
+#define TINIB_ustksz	#{$offsetof_TINIB_ustksz}
+#define TINIB_ustk		#{$offsetof_TINIB_ustk}
+#define DOMINIB_domptn	#{$offsetof_DOMINIB_domptn}
+#define DOMINIB_p_section_table	#{$offsetof_DOMINIB_p_section_table}
+#define SVCINIB_extsvc	#{$offsetof_SVCINIB_extsvc}
+#define SVCINIB_stksz	#{$offsetof_SVCINIB_stksz}
+#define T_EXCINF_rundom	#{$offsetof_T_EXCINF_rundom}
+#define T_EXCINF_cpsr	#{$offsetof_T_EXCINF_cpsr}
+EOS

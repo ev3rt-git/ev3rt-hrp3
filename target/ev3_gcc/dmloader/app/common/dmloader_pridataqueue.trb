@@ -1,0 +1,61 @@
+# ==================== 
+# Handle CRE_PDQ
+# Input:
+#     $moduleCfgC
+#     $moduleCfgH
+#     $modCfgTab
+# Output:
+#     PDQ IDs in 'module_cfg.h/.c'
+#     _module_cpdq_tab in 'module_cfg.c'
+#     $modCfgTab (updated)
+# ====================
+
+$cfgData[:CRE_PDQ].each{|_, params|
+  # Check user domain
+  if $domData[params[:domain]][:domid].str != "TDOM_APP"
+    error_ercd("E_NOSPT", params, "PDQ must belong to TDOM_APP in dynamic loading mode")
+  end
+
+  # pdqatrが無効の場合（E_RSATR）［NGKI1804］［NGKI1795］
+  #（TA_TPRI以外のビットがセットされている場合）
+  if (params[:pdqatr] & ~($TA_TPRI)) != 0
+    error_illegal_id("E_RSATR", params, :pdqatr, :pdqid)
+  end
+
+  # maxdpriが有効範囲外の場合（E_PAR）［NGKI1819］
+  #（TMIN_DPRI <= maxdpri && maxdpri <= TMAX_DPRIでない場合）
+  if !($TMIN_DPRI <= params[:maxdpri] && params[:maxdpri] <= $TMAX_DPRI)
+    error_illegal_id("E_PAR", params, :maxdpri, :pdqid)
+  end
+
+  # pdqmbがNULLでない場合（E_NOSPT）［HRPS0127］
+  if params[:pdqmb] != "NULL"
+    error_illegal_id("E_NOSPT", params, :pdqmb, :pdqid)
+  end
+
+  # pdqcntが負の場合（E_PAR）
+  if params[:pdqcnt] < 0
+    error_illegal_id("E_PAR", params, :pdqcnt, :pdqid)
+  end
+
+  # Generate IDs
+  pdqid = params[:pdqid].str
+  $moduleCfgH.add("extern ID _module_id_#{pdqid};")
+  $moduleCfgH.add("#define #{pdqid} ((const ID)(_module_id_#{pdqid}))")
+  $moduleCfgC.add(<<EOS)
+ID _module_id_#{pdqid} __attribute__((section (".module.text")));
+EOS
+}
+
+#
+# Generate '_module_cpdq_tab' and update '_module_cfg_tab'
+#
+if $cfgData[:CRE_PDQ].size > 0
+$moduleCfgC.add("static const T_CPDQ _module_cpdq_tab[#{$cfgData[:CRE_PDQ].size}] = {")
+$cfgData[:CRE_PDQ].each_with_index{|(_, params), index|
+  $moduleCfgC.add("\t{ #{params[:pdqatr]}, #{params[:pdqcnt]}, #{params[:maxdpri]}, #{params[:pdqmb]} },")
+  $modCfgTab.push({:sfncd => "TSFN_CRE_PDQ", :argument => "&_module_cpdq_tab[#{index}]", :retvalptr => "&_module_id_#{params[:pdqid]}"})
+}
+$moduleCfgC.add2("};")
+end
+

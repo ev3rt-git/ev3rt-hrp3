@@ -1,0 +1,129 @@
+$timeStampFileName = CFG1_OUT_TIMESTAMP
+
+$moduleCfgC = GenFile.new("module_cfg.c")
+$moduleCfgH = GenFile.new("module_cfg.h")
+
+$moduleCfgC.add(<<EOS)
+#include "kernel/kernel_impl.h"
+#include "common/module_common.h"
+#include "platform_interface_layer.h"
+EOS
+GenerateIncludes($moduleCfgC)
+
+$moduleCfgH.add("#pragma once")
+
+$modCfgTab = []
+
+# ==================== 
+# Handle CRE_TSK
+# ====================
+
+#
+#
+$cfgData[:CRE_TSK].each{|_, params|
+}
+
+#
+# Generate IDs and user stacks
+# 
+$cfgData[:CRE_TSK].each{|_, params|
+  # Check user domain
+  if $domData[params[:domain]][:domid].str != "TDOM_APP"
+    error_ercd("E_NOSPT", params, "Task must belong to TDOM_APP to build a loadable module")
+  end
+
+  # Check stk parameter
+  if params[:stk] != "NULL"
+    error_ercd("E_PAR", params, "stk in CRE_TSK must be NULL")
+  end
+
+  tskid = params[:tskid].str
+  params[:stk] = "_module_ustack_#{tskid}"
+
+  $moduleCfgH.add("extern ID _module_id_#{tskid};")
+  $moduleCfgH.add("#define #{tskid} ((const ID)(_module_id_#{tskid}))")
+  $moduleCfgC.add(<<EOS)
+ID _module_id_#{tskid} __attribute__((section (".module.text")));
+static STK_T #{params[:stk]}[COUNT_STK_T(#{params[:stksz]})];
+EOS
+
+  params[:stksz] = "ROUND_STK_T(#{params[:stksz]})"
+}
+
+#
+# Generate '_module_ctsk_tab' and update '_module_cfg_tab'
+#
+$moduleCfgC.add("static const T_CTSK _module_ctsk_tab[#{$cfgData[:CRE_TSK].size}] = {")
+$cfgData[:CRE_TSK].each_with_index{|(_, params), index|
+  params[:sstksz] = "DEFAULT_SSTKSZ" if params[:sstksz].nil?
+  params[:sstk] = "NULL" if params[:sstk].nil?
+  $moduleCfgC.add("\t{ #{params[:tskatr]}, #{params[:exinf]}, #{params[:task]}, #{params[:itskpri]}, #{params[:stksz]}, #{params[:stk]}, #{params[:sstksz]}, #{params[:sstk]} },")
+  $modCfgTab.push({:sfncd => "TSFN_CRE_TSK", :argument => "&_module_ctsk_tab[#{index}]", :retvalptr => "&_module_id_#{params[:tskid]}"})
+}
+$moduleCfgC.add2("};")
+
+IncludeTrb("dmloader_semaphore.trb")
+IncludeTrb("dmloader_eventflag.trb")
+IncludeTrb("dmloader_dataqueue.trb")
+IncludeTrb("dmloader_pridataqueue.trb")
+IncludeTrb("dmloader_mutex.trb")
+
+# ===========================
+# Generate '_module_cfg_tab'
+# ===========================
+$moduleCfgC.add2("const uint32_t _module_cfg_entry_num = #{$modCfgTab.size};")
+$moduleCfgC.add("const MOD_CFG_ENTRY _module_cfg_tab[#{$modCfgTab.size}] = {")
+$modCfgTab.each{|modCfg|
+  $moduleCfgC.add("\t{ #{modCfg[:sfncd]}, #{modCfg[:argument]}, #{modCfg[:retvalptr]} },")
+}
+$moduleCfgC.add2("};")
+
+$moduleCfgC.add("const uint32_t _module_pil_version = PIL_VERSION;")
+
+# TODO: support following in HRP3
+=begin
+
+$MODCFGTAB_SFNCD[1] = VALUE("x", 0)$
+$DEFAULT.ACPTN[1] = VALUE("TACP_KERNEL", 1)$
+$ $TRACE(MODCFGTAB_SFNCD)$
+$ $TRACE(DEFAULT.ACPTN[1])$
+
+$INCLUDE"dmloader_semaphore.tf"$
+$INCLUDE"dmloader_eventflag.tf"$
+$INCLUDE"dmloader_dataqueue.tf"$
+$INCLUDE"dmloader_pridataqueue.tf"$
+$INCLUDE"dmloader_mutex.tf"$
+
+$ ==================== 
+$ Handle ATT_MOD
+$ ====================
+$FOREACH mod MOD.ORDER_LIST$
+$IF !EQ(MOD.DOMAIN[mod], "") && !EQ(MOD.DOMAIN[mod], "TDOM_APP")$
+    $ERROR MOD.TEXT_LINE[mod]$E_NOSPT: 
+        $FORMAT(_("%1% `%2%\' must belong to TDOM_NONE or TDOM_APP in %3% to build a loadable module"), "module", UNESCSTR(MOD.MODULE[mod]), MOD.APINAME[mod])$
+    $END$   
+$END$
+$END$
+
+$ ==================== 
+$ Handle ATA_SEC
+$ ====================
+$FOREACH sec SEC.ORDER_LIST$
+$IF !EQ(SEC.DOMAIN[sec], "") && !EQ(SEC.DOMAIN[sec], "TDOM_APP")$
+    $ERROR SEC.TEXT_LINE[sec]$E_NOSPT: 
+        $FORMAT(_("%1% `%2%\' must belong to TDOM_NONE or TDOM_APP in %3% to build a loadable module"), "section", UNESCSTR(SEC.MODULE[sec]), SEC.APINAME[sec])$
+    $END$   
+$END$
+$END$
+
+$ ==================== 
+$ Handle invalid APIs
+$ ====================
+$FOREACH inv INVALIDAPI.ORDER_LIST$
+    $ERROR INVALIDAPI.TEXT_LINE[inv]$E_NOSPT: 
+        $FORMAT(_("%1% is not supported in dynamic loading mode"), INVALIDAPI.APINAME[inv])$
+    $END$   
+$END$
+
+$INCLUDE"ev3api.tf"$
+=end

@@ -1,0 +1,360 @@
+# -*- coding: utf-8 -*-
+#
+#   TOPPERS/HRP Kernel
+#       Toyohashi Open Platform for Embedded Real-Time Systems/
+#       High Reliable system Profile Kernel
+# 
+#   Copyright (C) 2016-2019 by Embedded and Real-Time Systems Laboratory
+#               Graduate School of Information Science, Nagoya Univ., JAPAN
+# 
+#   上記著作権者は，以下の(1)〜(4)の条件を満たす場合に限り，本ソフトウェ
+#   ア（本ソフトウェアを改変したものを含む．以下同じ）を使用・複製・改
+#   変・再配布（以下，利用と呼ぶ）することを無償で許諾する．
+#   (1) 本ソフトウェアをソースコードの形で利用する場合には，上記の著作
+#       権表示，この利用条件および下記の無保証規定が，そのままの形でソー
+#       スコード中に含まれていること．
+#   (2) 本ソフトウェアを，ライブラリ形式など，他のソフトウェア開発に使
+#       用できる形で再配布する場合には，再配布に伴うドキュメント（利用
+#       者マニュアルなど）に，上記の著作権表示，この利用条件および下記
+#       の無保証規定を掲載すること．
+#   (3) 本ソフトウェアを，機器に組み込むなど，他のソフトウェア開発に使
+#       用できない形で再配布する場合には，次のいずれかの条件を満たすこ
+#       と．
+#     (a) 再配布に伴うドキュメント（利用者マニュアルなど）に，上記の著
+#         作権表示，この利用条件および下記の無保証規定を掲載すること．
+#     (b) 再配布の形態を，別に定める方法によって，TOPPERSプロジェクトに
+#         報告すること．
+#   (4) 本ソフトウェアの利用により直接的または間接的に生じるいかなる損
+#       害からも，上記著作権者およびTOPPERSプロジェクトを免責すること．
+#       また，本ソフトウェアのユーザまたはエンドユーザからのいかなる理
+#       由に基づく請求からも，上記著作権者およびTOPPERSプロジェクトを
+#       免責すること．
+#
+#   本ソフトウェアは，無保証で提供されているものである．上記著作権者お
+#   よびTOPPERSプロジェクトは，本ソフトウェアに関して，特定の使用目的
+#   に対する適合性も含めて，いかなる保証も行わない．また，本ソフトウェ
+#   アの利用により直接的または間接的に生じたいかなる損害に関しても，そ
+#   の責任を負わない．
+#
+#   $Id: domain_prep.trb 665 2019-02-03 17:06:18Z ertl-hiro $
+#
+
+#
+#		保護ドメインに関する前処理
+#
+
+#
+#  保護ドメインのラベルの作成
+#
+$domData.each do |_, params|
+  case params[:domid]
+  when $TDOM_KERNEL
+    params[:label] = "kernel"
+  when $TDOM_NONE
+    params[:label] = "shared"
+  else
+    params[:label] = params[:domid].str
+  end
+end
+
+#
+#  保護ドメインに関する変数の定義
+#
+# $defaultAcptn[domain]：保護ドメインのデフォルトのアクセス許可パターン
+# $udomainList：ユーザドメインのリスト（ソート済み）
+#
+$globalVars.push("udomainList")
+$defaultAcptn = {}
+$udomainList = []
+$domData.each do |key, params|
+  case key
+  when $TDOM_KERNEL
+    $defaultAcptn[key] = $acptnKernel
+  when $TDOM_NONE
+    $defaultAcptn[key] = $acptnShared
+  else
+    $defaultAcptn[key] = NumStr.new(1 << (key - 1), "TACP(#{params[:domid]})")
+    $udomainList.push(key)
+  end
+end
+$udomainList.sort!
+
+#
+#  保護ドメイン毎の割り付け可能なオブジェクトIDの数の初期化
+#
+$domData.each do |_, params|
+  $tnum_aobjid_list.each do |tnum_aobjid|
+    params[tnum_aobjid] = 0
+  end
+end
+
+#
+#  保護ドメインに対するアクセス許可ベクタの設定（ACV_DOM）
+#
+# ACV_DOMに関するエラーチェック
+$cfgData[:ACV_DOM].each do |key, params|
+  # 保護ドメインの囲みの中に記述されていない場合は無所属とする
+  params[:domain] ||= $TDOM_NONE
+
+  # 保護ドメイン中に複数のACV_DOMがある場合（E_OBJ）［NGKI3761］
+  $cfgData[:ACV_DOM].each do |key2, params2|
+    break if key2 == key
+    if params2[:domain] == params[:domain]
+      error_ercd("E_OBJ", params, \
+						"%apiname is duplicated in a protection domain")
+    end
+  end
+
+  # ACV_DOMのデータを$domDataに取り込む
+  $domData[params[:domain]][:acptn1] = params[:acptn1]
+  $domData[params[:domain]][:acptn2] = params[:acptn2]
+  $domData[params[:domain]][:acptn3] = params[:acptn3]
+  $domData[params[:domain]][:acptn4] = params[:acptn4]
+end
+
+#
+#  保護ドメインに対する制限の設定（LMT_DOM）
+#
+# LMT_DOMに関するエラーチェック
+$cfgData[:LMT_DOM].each do |key, params|
+  #	保護ドメインの囲みの中に記述されていない場合（E_RSATR）［NGKI3747］
+  if !params.has_key?(:domain) || params[:domain] == $TDOM_NONE
+    error_ercd("E_RSATR", params, "%apiname must be within a protection domain")
+    # 以降のエラーの抑止
+    params[:domain] = $TDOM_NONE
+  end
+
+  #	保護ドメイン中に複数のLMT_DOMがある場合（E_OBJ）［NGKI3444］
+  $cfgData[:LMT_DOM].each do |key2, params2|
+    break if key2 == key
+    if params2[:domain] == params[:domain]
+      error_ercd("E_OBJ", params, \
+						"%apiname is duplicated in a protection domain")
+    end
+  end
+
+  # mintpriが有効範囲外の場合（E_PAR）［NGKI3445］
+  #（TMIN_TPRI <= mintpri && mintpri <= TMAX_TPRIでない場合）
+  if !($TMIN_TPRI <= params[:mintpri] && params[:mintpri] <= $TMAX_TPRI)
+    error_illegal("E_PAR", params, :mintpri)
+  end
+
+  # LMT_DOMのデータを$domDataに取り込む
+  $domData[params[:domain]][:mintpri] = params[:mintpri]
+end
+
+#
+#  ACV_DOM／LMT_DOMがない時のデフォルト値の設定
+#
+$domData.each do |key, params|
+  # ACV_DOMがない時のデフォルト値［NGKI0569］［NGKI0617］
+  params[:acptn1] ||= $defaultAcptn[key]
+  params[:acptn2] ||= $acptnKernel
+  params[:acptn3] ||= $acptnKernel
+  params[:acptn4] ||= $defaultAcptn[key]
+
+  if key != $TDOM_NONE
+    # LMT_DOMがない時のデフォルト値［NGKI3448］
+    params[:mintpri] ||= NumStr.new($TMIN_TPRI + 1, "TMIN_TPRI + 1")
+  end
+end
+
+#
+#  システム周期の設定（DEF_SCY）
+#
+# DEF_SCYに関するエラーチェック
+if $cfgData[:DEF_SCY].size > 0
+  # 静的API「DEF_SCY」が複数ある場合（E_OBJ）［NGKI5016］
+  if $cfgData[:DEF_SCY].size > 1
+    error("E_OBJ: too many DEF_SCY")
+  end
+
+  # DEF_SCYがある場合の処理
+  params0 = $cfgData[:DEF_SCY][1]
+
+  # 保護ドメインの囲みの中に記述されている場合（E_RSATR）［NGKI5013］
+  if params0.has_key?(:domain)
+    error_ercd("E_RSATR", params0, \
+						"%apiname must be outside of protection domains")
+  end
+
+  # scyctimが有効範囲外の場合（E_PAR）［NGKI5015］
+  #（0 < scyctim && scyctim <= TMAX_RELTIMでない場合）
+  if !(0 < params0[:scyctim] && params0[:scyctim] <= $TMAX_RELTIM)
+    error_illegal("E_PAR", params0, :scyctim)
+  end
+end
+
+#
+#  システム動作モードの生成（CRE_SOM）
+#
+# CRE_SOMに関するエラーチェックと前処理
+$cfgData[:CRE_SOM].each do |_, params|
+  # システム周期が設定されていない場合［NGKI5039］
+  if $cfgData[:DEF_SCY].size == 0
+    warning_api(params, "%apiname is ignored")
+    next
+  end
+
+  # 保護ドメインの囲みの中に記述されている場合（E_RSATR）［NGKI5022］
+  if params.has_key?(:domain)
+    error_ercd("E_RSATR", params, \
+						"%apiname must be outside of protection domains")
+  end
+
+  # somatrが無効の場合（E_RSATR）［NGKI5021］［NGKI5004］
+  #（TA_INISOM以外のビットがセットされている場合）
+  if (params[:somatr] & ~$TA_INISOM) != 0
+    error_illegal_id("E_RSATR", params, :somatr, :somid)
+  end
+
+  # nxtsomのデフォルト値の設定［NGKI5029］
+  params[:nxtsom] ||= params[:somid]
+
+  if (params[:somatr] & $TA_INISOM) != 0
+    # TA_INISOM属性のシステム動作モードが複数ある場合（E_OBJ）［NGKI5025］
+    if defined?($inisom)
+      error_ercd("E_OBJ", params, "more than one system operation modes " \
+					                 "with TA_INISOM attribute in %apiname")
+    else
+      $inisom = params[:somid]
+    end
+  end
+end
+
+#
+#  タイムウィンドウの登録（ATT_TWD）
+#
+# $schedcbList[domain]：domainにタイムウィンドウが登録されているか？
+# $twdList：タイムウィンドウの情報
+#
+# ATT_TWDに関するエラーチェックと前処理
+$globalVars.push("twdList")
+$schedcbList = {}
+$twdList = {}
+$cfgData[:ATT_TWD].each do |key, params|
+  # システム周期が設定されていない場合［NGKI5052］
+  if $cfgData[:DEF_SCY].size == 0
+    warning_api(params, "%apiname is ignored")
+    next
+  end
+
+  # 保護ドメインの囲みの中に記述されている場合（E_RSATR）［NGKI5041］
+  if params.has_key?(:domain)
+    error_ercd("E_RSATR", params, \
+						"%apiname must be outside of protection domains")
+  end
+
+  # domidが有効範囲外の場合（E_ID）［NGKI5043］
+  tmax_domid = $TMIN_DOMID + $udomainList.size - 1
+  if !($TMIN_DOMID <= params[:domid] && params[:domid] <= tmax_domid)
+    error_illegal("E_ID", params, :domid)
+  end
+
+  # twdlenが0，またはTMAX_TWDTIMより大きい場合（E_PAR）［NGKI5045］
+  if !(0 < params[:twdlen] && params[:twdlen] <= $TMAX_TWDTIM)
+    error_illegal("E_PAR", params, :twdlen)
+  end
+
+  $schedcbList[params[:domid].val] = true
+  $twdList[key] = params.dup
+end
+
+#
+#  $twdListのソート
+#
+# まずシステム動作モード順にソートし，同じシステム動作モードの中では，
+# システム周期内での順序にソートする．
+#
+$twdList = Hash[$twdList.sort_by.with_index {|(_, params), index| \
+							[ params[:somid].val, params[:twdord], index ]}]
+
+#
+#  タイムウィンドウに関する前処理
+#
+# $cfgData[:CRE_SOM][key][:twdidx]：システム動作モードに対する先頭のタ
+#									イムウィンドウ情報のインデックス
+#
+twdidx = 0	# タイムウィンドウ初期化ブロックの配列中でのインデックス
+$cfgData[:CRE_SOM].sort.each do |key, params|
+  params[:twdidx] = twdidx
+
+  # タイムウィンドウ長の合計を求める
+  totalLength = 0
+  $twdList.each do |key2, params2|
+    if params2[:somid] == key
+      totalLength += params2[:twdlen]
+      twdidx += 1
+    end
+  end
+
+  # タイムウィンドウ長の合計が長すぎる場合（E_PAR）［NGKI5049］
+  if totalLength >= $cfgData[:DEF_SCY][1][:scyctim]
+    error("E_PAR: total time window length #{totalLength} of " \
+				"system operation mode `#{params[:somid]}' " \
+				"must be shorter than the system cycle")
+  end
+end
+
+#
+#  スケジューリング単位管理ブロック，タイムイベントヒープの変数名の決
+#  定と必要なノード数の計算
+#
+# $domData[key][:schedcb]：保護ドメインに対するスケジューリング単位管
+#						   理ブロックの参照名
+# $domData[key][:tmevtHeap]：保護ドメインに対するタイムイベントヒープ
+#							 の参照名
+# $domData[key][:tmevtCount]：保護ドメインに対するタイムイベントヒー
+#							  プのノード数
+# 
+indexSchedcb = 0
+$domData[$TDOM_KERNEL][:schedcb] = "_kernel_schedcb_kernel"
+$domData[$TDOM_KERNEL][:tmevtHeap] = "_kernel_tmevt_heap_kernel"
+$domData[$TDOM_KERNEL][:tmevtCount] = 1
+$udomainList.each do |domain|
+  params = $domData[domain]
+  if $schedcbList.has_key?(domain)
+    params[:schedcb] = "_kernel_schedcb_table[#{indexSchedcb}]"
+    indexSchedcb += 1
+  else
+    params[:schedcb] = "_kernel_schedcb_idle"
+  end
+  if $cfgData[:DEF_SCY].size == 0
+    params[:tmevtHeap] = "_kernel_tmevt_heap_kernel"
+  elsif $schedcbList.has_key?(domain)
+    params[:tmevtHeap] = "_kernel_tmevt_heap_#{params[:domid]}"
+  else
+    params[:tmevtHeap] = "_kernel_tmevt_heap_idle"
+  end
+  params[:tmevtCount] = 0
+end
+$cfgData[:CRE_TSK].each do |_, params|
+  if params.has_key?(:domain)		# タスクに関するエラー処理前のため必要
+    $domData[params[:domain]][:tmevtCount] += 1
+  end
+end
+$cfgData[:AID_TSK].each do |_, params|
+  if params.has_key?(:domain)		# タスクに関するエラー処理前のため必要
+    $domData[params[:domain]][:tmevtCount] += params[:notsk]
+  end
+end
+$cfgData[:CRE_CYC].each do |_, params|
+  if params.has_key?(:domain)		# 周期通知に関するエラー処理前のため必要
+    $domData[params[:domain]][:tmevtCount] += 1
+  end
+end
+$cfgData[:AID_CYC].each do |_, params|
+  if params.has_key?(:domain)		# 周期通知に関するエラー処理前のため必要
+    $domData[params[:domain]][:tmevtCount] += params[:nocyc]
+  end
+end
+$cfgData[:CRE_ALM].each do |_, params|
+  if params.has_key?(:domain)		# アラーム通知に関するエラー処理前のため必要
+    $domData[params[:domain]][:tmevtCount] += 1
+  end
+end
+$cfgData[:AID_ALM].each do |_, params|
+  if params.has_key?(:domain)		# アラーム通知に関するエラー処理前のため必要
+    $domData[params[:domain]][:tmevtCount] += params[:noalm]
+  end
+end

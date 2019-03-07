@@ -1,0 +1,69 @@
+# kernel_cfg.c
+inh_table
+intcfg_table
+exc_table
+
+# kernel_mem.c
+section_table
+page_table
+
+# core_support.S
+dispatch
+start_dispatch
+exit_and_dispatch
+call_exit_kernel
+start_stask_r
+start_utask_r
+irq_handler
+undef_handler
+svc_handler
+pabort_handler
+dabort_handler
+fiq_handler
+scycovr_handler
+
+# core_kernel_impl.c
+excpt_nest_count
+arm_mmu_initialize
+arm_fpu_initialize
+core_initialize
+core_terminate
+call_ext_tsk
+xlog_sys
+xlog_fsr
+default_int_handler
+default_exc_handler
+
+# mpcore_kernel_impl.c
+mpcore_initialize
+mpcore_terminate
+
+# mpcore_timer.c
+target_hrt_initialize
+target_hrt_terminate
+target_hrt_handler
+target_twdtimer_initialize
+target_twdtimer_terminate
+target_twdtimer_handler
+target_ovrtimer_initialize
+target_ovrtimer_terminate
+target_ovrtimer_handler
+
+# gic_kernel_impl.c
+gicc_initialize
+gicc_terminate
+gicd_initialize
+gicd_terminate
+
+# gic_support.S
+irc_begin_int
+irc_end_int
+irc_get_intpri
+irc_begin_exc
+irc_end_exc
+
+# pl310.c
+pl310_initialize
+pl310_disable
+pl310_invalidate_all
+pl310_clean_and_invalidate_all

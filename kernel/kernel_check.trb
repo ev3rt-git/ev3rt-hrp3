@@ -1,0 +1,636 @@
+# -*- coding: utf-8 -*-
+#
+#   TOPPERS/HRP Kernel
+#       Toyohashi Open Platform for Embedded Real-Time Systems/
+#       High Reliable system Profile Kernel
+# 
+#   Copyright (C) 2015 by FUJI SOFT INCORPORATED, JAPAN
+#   Copyright (C) 2015-2019 by Embedded and Real-Time Systems Laboratory
+#               Graduate School of Information Science, Nagoya Univ., JAPAN
+#  
+#   上記著作権者は，以下の(1)〜(4)の条件を満たす場合に限り，本ソフトウェ
+#   ア（本ソフトウェアを改変したものを含む．以下同じ）を使用・複製・改
+#   変・再配布（以下，利用と呼ぶ）することを無償で許諾する．
+#   (1) 本ソフトウェアをソースコードの形で利用する場合には，上記の著作
+#       権表示，この利用条件および下記の無保証規定が，そのままの形でソー
+#       スコード中に含まれていること．
+#   (2) 本ソフトウェアを，ライブラリ形式など，他のソフトウェア開発に使
+#       用できる形で再配布する場合には，再配布に伴うドキュメント（利用
+#       者マニュアルなど）に，上記の著作権表示，この利用条件および下記
+#       の無保証規定を掲載すること．
+#   (3) 本ソフトウェアを，機器に組み込むなど，他のソフトウェア開発に使
+#       用できない形で再配布する場合には，次のいずれかの条件を満たすこ
+#       と．
+#     (a) 再配布に伴うドキュメント（利用者マニュアルなど）に，上記の著
+#         作権表示，この利用条件および下記の無保証規定を掲載すること．
+#     (b) 再配布の形態を，別に定める方法によって，TOPPERSプロジェクトに
+#         報告すること．
+#   (4) 本ソフトウェアの利用により直接的または間接的に生じるいかなる損
+#       害からも，上記著作権者およびTOPPERSプロジェクトを免責すること．
+#       また，本ソフトウェアのユーザまたはエンドユーザからのいかなる理
+#       由に基づく請求からも，上記著作権者およびTOPPERSプロジェクトを
+#       免責すること．
+#  
+#   本ソフトウェアは，無保証で提供されているものである．上記著作権者お
+#   よびTOPPERSプロジェクトは，本ソフトウェアに関して，特定の使用目的
+#   に対する適合性も含めて，いかなる保証も行わない．また，本ソフトウェ
+#   アの利用により直接的または間接的に生じたいかなる損害に関しても，そ
+#   の責任を負わない．
+# 
+#   $Id: kernel_check.trb 665 2019-02-03 17:06:18Z ertl-hiro $
+#  
+
+#
+#		コンフィギュレータのチェックパスの生成スクリプト
+#
+
+if $TOPPERS_ML_MANUAL
+  #
+  #  共通部の読込み
+  #
+  IncludeTrb("kernel/kernel_lib.trb")
+
+  #
+  #  タイムスタンプファイルの指定
+  #
+  $timeStampFileName = "check.timestamp"
+
+  #
+  #  データセクションのLMAからVMAへのコピー
+  #
+  CopyLma()
+end
+
+#
+#  メモリ領域を含むメモリオブジェクトのサーチ関数
+#
+def SearchMemobj(base, size)
+  endaddr = base + size
+  i = 1
+  j = $sortedMemtopList.size
+
+  while i <= j
+    k = (i + j) / 2
+    params = $memObj[$sortedMemtopList[k - 1]]
+    if base < params[:baseaddr]
+      j = k - 1
+    elsif base >= params[:maendaddr]
+      i = k + 1
+    elsif endaddr <= params[:maendaddr]
+      return(params)
+    else
+      return(nil)
+    end
+  end
+  return(nil)
+end
+
+#
+#  メモリ領域がメモリオブジェクトに含まれているかのチェック関数
+#
+def CheckMemobj(base, size)
+  return(SearchMemobj(base, size).nil?)
+end
+
+#
+#  メモリ領域がカーネル専用のメモリオブジェクトに含まれているかのチェック関数
+#
+def CheckMemobjKernel(base, size)
+  params = SearchMemobj(base, size)
+  return(params.nil? || (params[:mematr] & ($TA_NOWRITE|$TA_NOREAD)) != 0 \
+						|| params[:acptn1] != $TACP_KERNEL \
+						|| params[:acptn2] != $TACP_KERNEL \
+						|| params[:acptn4] != $TACP_KERNEL)
+end
+
+#
+#  通知情報のチェック関数
+#
+$tmax_tskid = $TMIN_TSKID + $cfgData[:CRE_TSK].size - 1
+$tmax_semid = $TMIN_SEMID + $cfgData[:CRE_SEM].size - 1
+$tmax_flgid = $TMIN_FLGID + $cfgData[:CRE_FLG].size - 1
+$tmax_dtqid = $TMIN_DTQID + $cfgData[:CRE_DTQ].size - 1
+
+def checkNotifyHandler(key, params, objid, exinf, nfyhdr)
+  # パラメータを変数に格納
+  nfymode = params[:nfymode]
+  nfymode1 = nfymode & 0x0f
+  nfymode2 = nfymode & ~0x0f
+  par1 = params[:par1]
+  par2 = params[:par2]
+  domain = params[:domain]
+  if domain > 0
+    domptn = (1 << (domain - 1))
+  end
+  domid = $domData[domain][:domid]
+  funcname = "_kernel_nfyhdr_#{params[objid]}"
+
+  # 通知処理のパラメータ数による補正処理
+  if nfymode1 == $TNFY_SETVAR || nfymode1 == $TNFY_SETFLG \
+								|| nfymode1 == $TNFY_SNDDTQ
+    # 通知処理のパラメータが2つの場合
+    epar1 = params[:par3]
+    epar2 = params[:par4]
+  else
+    # 通知処理のパラメータが1つの場合
+    epar1 = params[:par2]
+    epar2 = params[:par3]
+  end
+
+  # タイムイベントハンドラの先頭番地が，プログラムの先頭番地として正し
+  # くない場合（E_PAR）［NGKI3693］
+  if nfymode == $TNFY_HANDLER
+    tmehdr = nfyhdr
+    params1 = params.dup
+    params1[:tmehdr] = par2
+    if (tmehdr & ($CHECK_FUNC_ALIGN - 1)) != 0
+      error_wrong_id("E_PAR", params1, :tmehdr, objid, "not aligned")
+    end
+    if $CHECK_FUNC_NONNULL && tmehdr == 0
+      error_wrong_id("E_PAR", params1, :tmehdr, objid, "null")
+    end
+  end
+
+  # イベント通知処理の変数の番地とオブジェクトIDのチェック
+  if nfymode1 == $TNFY_SETVAR || nfymode1 == $TNFY_INCVAR
+    # 変数の設定／インクリメントによるタイムイベントの通知
+	p_var = exinf
+    params1 = params.dup
+    params1[:p_var] = par1
+
+    # 通知方法中の変数の番地が，intptr_t型の変数の番地として正しくない
+    # 場合（E_PAR）［NGKI3699］［NGKI3897］
+    if (p_var & ($CHECK_INTPTR_ALIGN - 1)) != 0
+      error_wrong_id("E_PAR", params1, :p_var, objid, "not aligned")
+    end
+    if $CHECK_INTPTR_NONNULL && p_var == 0
+      error_wrong_id("E_PAR", params1, :p_var, objid, "null")
+    end
+
+    # 変数に書込みアクセスが許可されていない場合（E_MACV）［NGKI3702］
+    # ［NGKI3898］
+    params2 = SearchMemobj(p_var, $sizeof_intptr_t)
+    if params2.nil? || (domain > 0 && (params2[:nowrite] \
+										|| (params2[:acptn1] & domptn) == 0))
+      error_ercd("E_MACV", params1, "%%p_var cannot be accessed " \
+				"from protection domain `#{domid}' in %apiname of %#{objid}")
+    end
+  elsif (nfymode1 == $TNFY_ACTTSK || nfymode1 == $TNFY_WUPTSK)
+    # タスクの起動／起床によるタイムイベントの通知
+    tskid = exinf
+    params1 = params.dup
+    params1[:tskid] = par1
+
+    # 通知方法中のタスクIDが有効範囲外の場合（E_ID）［NGKI3704］
+    if !($TMIN_TSKID <= tskid && tskid <= $tmax_tskid)
+      error_illegal_id("E_ID", params1, :tskid, objid)
+    else
+      # タスクに対する通常操作1が許可されていない場合（E_OACV）［NGKI3705］
+      params2 = $cfgData[:CRE_TSK][tskid]
+      if domain > 0 && (params2[:acptn1] & domptn) == 0
+        error_ercd("E_OACV", params1, "%%tskid cannot be accessed " \
+				"from protection domain `#{domid}' in %apiname of %#{objid}")
+      end
+    end
+  elsif nfymode1 == $TNFY_SIGSEM
+    # セマフォの資源の返却によるタイムイベントの通知
+    semid = exinf
+    params1 = params.dup
+    params1[:semid] = par1
+
+    # 通知方法中のセマフォIDが有効範囲外の場合（E_ID）［NGKI3707］
+    if !($TMIN_SEMID <= semid && semid <= $tmax_semid)
+      error_illegal_id("E_ID", params1, :semid, objid)
+    else
+      # セマフォに対する通常操作1が許可されていない場合（E_OACV）［NGKI3708］
+      params2 = $cfgData[:CRE_SEM][semid]
+      if domain > 0 && (params2[:acptn1] & domptn) == 0
+        error_ercd("E_OACV", params1, "%%semid cannot be accessed " \
+				"from protection domain `#{domid}' in %apiname of %#{objid}")
+      end
+    end
+  elsif nfymode1 == $TNFY_SETFLG
+    # イベントフラグのセットによるタイムイベントの通知
+    flgid = exinf
+    params1 = params.dup
+    params1[:flgid] = par1
+
+    # 通知方法中のイベントフラグIDが有効範囲外の場合（E_ID）［NGKI3710］
+    if !($TMIN_FLGID <= flgid && flgid <= $tmax_flgid)
+      error_illegal_id("E_ID", params1, :flgid, objid)
+    else
+      # イベントフラグに対する通常操作1が許可されていない場合（E_OACV）
+      # ［NGKI3711］
+      params2 = $cfgData[:CRE_FLG][flgid]
+      if domain > 0 && (params2[:acptn1] & domptn) == 0
+        error_ercd("E_OACV", params1, "%%flgid cannot be accessed " \
+				"from protection domain `#{domid}' in %apiname of %#{objid}")
+      end
+    end
+  elsif nfymode1 == $TNFY_SNDDTQ
+    # データキューへの送信によるタイムイベントの通知
+    dtqid = exinf
+    params1 = params.dup
+    params1[:dtqid] = par1
+
+    # 通知方法中のデータキューIDが有効範囲外の場合（E_ID）［NGKI3713］
+    if !($TMIN_DTQID <= dtqid && dtqid <= $tmax_dtqid)
+      error_illegal_id("E_ID", params1, :dtqid, objid)
+    else
+      # データキューに対する通常操作1が許可されていない場合（E_OACV）
+      # ［NGKI3716］
+      params2 = $cfgData[:CRE_DTQ][dtqid]
+      if domain > 0 && (params2[:acptn1] & domptn) == 0
+        error_ercd("E_OACV", params1, "%%dtqid cannot be accessed " \
+				"from protection domain `#{domid}' in %apiname of %#{objid}")
+      end
+    end
+  end
+
+  # エラー通知処理の変数の番地とオブジェクトIDのチェック
+  if (nfymode2 == $TENFY_SETVAR || nfymode2 == $TENFY_INCVAR)
+    # 変数の設定／インクリメントによるエラーの通知
+    p_var = PEEK(SYMBOL(funcname + "_p_evar"), $sizeof_intptr_t)
+    params1 = params.dup
+    params1[:p_var] = epar1
+
+    # 通知方法中の変数の番地が，intptr_t型の変数の番地として正しくない
+    # 場合（E_PAR）［NGKI3701］［NGKI3897］
+    if (p_var & ($CHECK_INTPTR_ALIGN - 1)) != 0
+      error_wrong_id("E_PAR", params1, :p_var, objid, "not aligned")
+    end
+    if $CHECK_INTPTR_NONNULL && p_var == 0
+      error_wrong_id("E_PAR", params1, :p_var, objid, "null")
+    end
+
+    # 変数に書込みアクセスが許可されていない場合（E_MACV）［NGKI3702］
+    # ［NGKI3898］
+    params2 = SearchMemobj(p_var, $sizeof_intptr_t)
+    if params2.nil? || (domain > 0 && (params2[:nowrite] \
+										|| (params2[:acptn1] & domptn) == 0))
+      error_ercd("E_MACV", params1, "%%p_var cannot be accessed " \
+				"from protection domain `#{domid}' in %apiname of %#{objid}")
+    end
+  elsif nfymode2 == $TENFY_ACTTSK || nfymode2 == $TENFY_WUPTSK
+    # タスクの起動／起床によるエラーの通知
+    tskid = PEEK(SYMBOL(funcname + "_etskid"), $sizeof_ID)
+    params1 = params.dup
+    params1[:tskid] = epar1
+
+    # 通知方法中のタスクIDが有効範囲外の場合（E_ID）［NGKI3704］
+    if !($TMIN_TSKID <= tskid && tskid <= $tmax_tskid)
+      error_illegal_id("E_ID", params1, :tskid, objid)
+    else
+      # タスクに対する通常操作1が許可されていない場合（E_OACV）［NGKI3705］
+      params2 = $cfgData[:CRE_TSK][tskid]
+      if domain > 0 && (params2[:acptn1] & domptn) == 0
+        error_ercd("E_OACV", params1, "%%tskid cannot be accessed " \
+				"from protection domain `#{domid}' in %apiname of %#{objid}")
+      end
+    end
+  elsif nfymode2 == $TENFY_SIGSEM
+    # セマフォの資源の返却によるエラーの通知
+	semid = PEEK(SYMBOL(funcname + "_esemid"), $sizeof_ID)
+    params1 = params.dup
+    params1[:semid] = epar1
+
+    # 通知方法中のセマフォIDが有効範囲外の場合（E_ID）［NGKI3707］
+    if !($TMIN_SEMID <= semid && semid <= $tmax_semid)
+      error_illegal_id("E_ID", params1, :semid, objid)
+    else
+      # セマフォに対する通常操作1が許可されていない場合（E_OACV）［NGKI3708］
+      params2 = $cfgData[:CRE_SEM][semid]
+      if domain > 0 && (params2[:acptn1] & domptn) == 0
+        error_ercd("E_OACV", params1, "%%semid cannot be accessed " \
+				"from protection domain `#{domid}' in %apiname of %#{objid}")
+      end
+    end
+  elsif nfymode2 == $TENFY_SETFLG
+    # イベントフラグのセットによるエラーの通知
+    flgid = PEEK(SYMBOL(funcname + "_eflgid"), $sizeof_ID)
+    params1 = params.dup
+    params1[:flgid] = epar1
+
+    # 通知方法中のイベントフラグIDが有効範囲外の場合（E_ID）［NGKI3710］
+    if !($TMIN_FLGID <= flgid && flgid <= $tmax_flgid)
+      error_illegal_id("E_ID", params1, :flgid, objid)
+    else
+      # イベントフラグに対する通常操作1が許可されていない場合（E_OACV）
+      # ［NGKI3711］
+      params2 = $cfgData[:CRE_FLG][flgid]
+      if domain > 0 && (params2[:acptn1] & domptn) == 0
+        error_ercd("E_OACV", params1, "%%flgid cannot be accessed " \
+				"from protection domain `#{domid}' in %apiname of %#{objid}")
+      end
+    end
+  elsif nfymode2 == $TENFY_SNDDTQ
+    # データキューへの送信によるエラーの通知
+    dtqid = PEEK(SYMBOL(funcname + "_edtqid"), $sizeof_ID)
+    params1 = params.dup
+    params1[:dtqid] = epar1
+
+    # 通知方法中のデータキューIDが有効範囲外の場合（E_ID）［NGKI3715］
+    if !($TMIN_DTQID <= dtqid && dtqid <= $tmax_dtqid)
+      error_illegal_id("E_ID", params1, :dtqid, objid)
+    else
+      # データキューに対する通常操作1が許可されていない場合（E_OACV）
+      # ［NGKI3716］
+      params2 = $cfgData[:CRE_DTQ][dtqid]
+      if domain > 0 && (params2[:acptn1] & domptn) == 0
+        error_ercd("E_OACV", params1, "%%dtqid cannot be accessed " \
+				"from protection domain `#{domid}' in %apiname of %#{objid}")
+      end
+    end
+  end
+end
+
+#
+#  タスクに関するチェック
+#
+tinib = SYMBOL("_kernel_tinib_table")
+$cfgData[:CRE_TSK].sort.each do |key, params|
+  # taskがプログラムの先頭番地として正しくない場合（E_PAR）［NGKI1033］
+  task = PEEK(tinib + $offsetof_TINIB_task, $sizeof_TASK)
+  if (task & ($CHECK_FUNC_ALIGN - 1)) != 0
+    error_wrong_id("E_PAR", params, :task, :tskid, "not aligned")
+  end
+  if $CHECK_FUNC_NONNULL && task == 0
+    error_wrong_id("E_PAR", params, :task, :tskid, "null")
+  end
+
+  # システムタスクのスタック領域とユーザタスクのシステムスタック領域の
+  # チェック
+  if $USE_TSKINICTXB
+    sstk = GetSstackTskinictxb(key, params, tinib)
+    sstksz = GetSstackSizeTskinictxb(key, params, tinib)
+  else
+    sstk = PEEK(tinib + $offsetof_TINIB_sstk, $sizeof_void_ptr)
+    sstksz = PEEK(tinib + $offsetof_TINIB_sstksz, $sizeof_size_t)
+  end
+
+  if params[:domain] == $TDOM_KERNEL
+    #
+    #  システムタスクの場合
+    #
+    # sstkがターゲット定義の制約に合致しない場合（E_PAR）［NGKI1056］
+    if (sstk & ($CHECK_SSTACK_ALIGN - 1)) != 0
+      error_wrong_id("E_PAR", params, :stk, :tskid, "not aligned")
+    end
+    if $CHECK_SSTACK_NONNULL && sstk == 0
+      error_wrong_id("E_PAR", params, :stk, :tskid, "null")
+    end
+
+    # カーネル専用のメモリオブジェクトに含まれていない場合（E_OBJ）［NGKI1057］
+    if CheckMemobjKernel(sstk, sstksz)
+      error_ercd("E_OBJ", params, "stack area of `%tskid' is not " \
+									"included in any kernel memory object")
+    end
+  else
+    #
+    #  ユーザタスクの場合
+    #
+    # sstkがターゲット定義の制約に合致しない場合（E_PAR）［NGKI1065］
+    if (sstk & ($CHECK_SSTACK_ALIGN - 1)) != 0
+      error_wrong_id("E_PAR", params, :sstk, :tskid, "not aligned")
+    end
+    if $CHECK_SSTACK_NONNULL && sstk == 0
+      error_wrong_id("E_PAR", params, :sstk, :tskid, "null")
+    end
+
+    # カーネル専用のメモリオブジェクトに含まれていない場合（E_OBJ）［NGKI1066］
+    if CheckMemobjKernel(sstk, sstksz)
+      error_ercd("E_OBJ", params, "system stack area of `%tskid' is not " \
+									"included in any kernel memory object")
+    end
+
+    # ustkがターゲット定義の制約に合致しない場合（E_PAR）［NGKI1056］
+    if $USE_TSKINICTXB
+      ustk = GetUstackTskinictxb(key, params, tinib)
+    else
+      ustk = PEEK(tinib + $offsetof_TINIB_ustk, $sizeof_void_ptr)
+    end
+    if (ustk & ($CHECK_USTACK_ALIGN - 1)) != 0
+      error_wrong_id("E_PAR", params, :stk, :tskid, "not aligned")
+    end
+    if $CHECK_USTACK_NONNULL && ustk == 0
+      error_wrong_id("E_PAR", params, :stk, :tskid, "null")
+    end
+  end
+
+  tinib += $sizeof_TINIB
+end
+
+#
+#  固定長メモリプールに関するチェック
+#
+mpfinib = SYMBOL("_kernel_mpfinib_table")
+$cfgData[:CRE_MPF].sort.each do |_, params|
+  mpf = PEEK(mpfinib + $offsetof_MPFINIB_mpf, $sizeof_void_ptr)
+  blksz = PEEK(mpfinib + $offsetof_MPFINIB_blksz, $sizeof_uint_t)
+  blkcnt = PEEK(mpfinib + $offsetof_MPFINIB_blkcnt, $sizeof_uint_t)
+  mpfsz = blksz * blkcnt
+
+  # mpfがターゲット定義の制約に合致しない場合（E_PAR）［NGKI2249］
+  if (mpf & ($CHECK_MPF_ALIGN - 1)) != 0
+    error_wrong_id("E_PAR", params, :mpf, :mpfid, "not aligned")
+  end
+  if $CHECK_MPF_NONNULL && mpf == 0
+    error_wrong_id("E_PAR", params, :mpf, :mpfid, "null")
+  end
+
+  # 固定長メモリプール領域がカーネルに登録されたメモリオブジェクトに含
+  # まれていない場合（E_OBJ）［NGKI2251］
+  if CheckMemobj(mpf, mpfsz)
+    error_ercd("E_OBJ", params, "memory pool area of `%mpfid' is not " \
+									"included in any kernel memory object")
+  end
+
+  mpfinib += $sizeof_MPFINIB
+end
+
+#
+#  周期通知に関するチェック
+#
+cycinib = SYMBOL("_kernel_cycinib_table")
+$cfgData[:CRE_CYC].sort.each do |key, params|
+  exinf = PEEK(cycinib + $offsetof_CYCINIB_exinf, $sizeof_intptr_t)
+  nfyhdr = PEEK(cycinib + $offsetof_CYCINIB_nfyhdr, $sizeof_NFYHDR)
+
+  # 通知情報のチェック
+  checkNotifyHandler(key, params, :cycid, exinf, nfyhdr)
+
+  cycinib += $sizeof_CYCINIB
+end
+
+#
+#  アラーム通知に関するチェック
+#
+alminib = SYMBOL("_kernel_alminib_table")
+$cfgData[:CRE_ALM].sort.each do |key, params|
+  exinf = PEEK(alminib + $offsetof_ALMINIB_exinf, $sizeof_intptr_t)
+  nfyhdr = PEEK(alminib + $offsetof_ALMINIB_nfyhdr, $sizeof_NFYHDR)
+
+  # 通知情報のチェック
+  checkNotifyHandler(key, params, :almid, exinf, nfyhdr)
+
+  alminib += $sizeof_ALMINIB
+end
+
+#
+#  割込みサービスルーチンに関するチェック
+#
+isrinib = SYMBOL("_kernel_isrinib_table")
+$cfgData[:CRE_ISR].sort.each do |_, params|
+  isr = PEEK(isrinib + $offsetof_ISRINIB_isr, $sizeof_ISR)
+
+  # isrがプログラムの先頭番地として正しくない場合（E_PAR）［NGKI3004］
+  if (isr & ($CHECK_FUNC_ALIGN - 1)) != 0
+    error_wrong_id("E_PAR", params, :isr, :isrid, "not aligned")
+  end
+  if $CHECK_FUNC_NONNULL && isr == 0
+    error_wrong_id("E_PAR", params, :isr, :isrid, "null")
+  end
+
+  isrinib += $sizeof_ISRINIB
+end
+
+#
+#  拡張サービスコールに関するチェック
+#
+svcinib = SYMBOL("_kernel_svcinib_table")
+$cfgData[:DEF_SVC].each do |_, params|
+  extsvc = PEEK(svcinib + $sizeof_SVCINIB * (params[:fncd] - 1) \
+								+ $offsetof_SVCINIB_extsvc, $sizeof_EXTSVC)
+
+  # extsvcがプログラムの先頭番地として正しくない場合（E_PAR）［NGKI3175］
+  if (extsvc & ($CHECK_FUNC_ALIGN - 1)) != 0
+    error_wrong_sym("E_PAR", params, :extsvc, :fncd, "not aligned")
+  end
+  if $CHECK_FUNC_NONNULL && extsvc == 0
+    error_wrong_sym("E_PAR", params, :extsvc, :fncd, "null")
+  end
+end
+
+#
+#  タイムウィンドウに関するチェック
+#
+twdinib = SYMBOL("_kernel_twdinib_table")
+$twdList.each do |key, params|
+  if params.has_key?(:twdid)
+    exinf = PEEK(twdinib + $offsetof_TWDINIB_exinf, $sizeof_intptr_t)
+    nfyhdr = PEEK(twdinib + $offsetof_TWDINIB_nfyhdr, $sizeof_NFYHDR)
+
+    # 通知情報のチェック
+    checkNotifyHandler(key, params, :twdid, exinf, nfyhdr)
+  end
+  twdinib += $sizeof_TWDINIB
+end
+
+#
+#  システム動作モードに関するチェック
+#
+if $cfgData[:DEF_SCY].size > 0
+  tmax_somid = $TMIN_SOMID + $cfgData[:CRE_SOM].size - 1
+  sominib = SYMBOL("_kernel_sominib_table")
+  p_sominib = sominib
+  $cfgData[:CRE_SOM].sort.each do |_, params|
+    # nxtsomが不正の場合（E_ID）［NGKI5024］
+    p_nxtsom = PEEK(p_sominib + $offsetof_SOMINIB_p_nxtsom, $sizeof_void_ptr)
+    nxtsom = (p_nxtsom - sominib) / $sizeof_SOMINIB + $TMIN_SOMID
+    if !((p_nxtsom - sominib) % $sizeof_SOMINIB == 0 \
+					&& $TMIN_SOMID <= nxtsom && nxtsom <= tmax_somid)
+      error_illegal_id("E_ID", params, :nxtsom, :somid)
+    end
+    p_sominib += $sizeof_SOMINIB
+  end
+end
+
+#
+#  非タスクコンテキスト用のスタック領域に関するチェック
+#
+if $cfgData[:DEF_ICS].size > 0
+  params0 = $cfgData[:DEF_ICS][1]
+  istk = PEEK(SYMBOL("_kernel_istk"), $sizeof_void_ptr)
+  istksz = PEEK(SYMBOL("_kernel_istksz"), $sizeof_size_t)
+
+  # istkszがターゲット定義の制約に合致しない場合（E_PAR）［NGKI3222］
+  if (istk & ($CHECK_SSTACK_ALIGN - 1)) != 0
+    error_wrong("E_PAR", params0, :istk, "not aligned")
+  end
+  if $CHECK_SSTACK_NONNULL && istk == 0
+    error_wrong("E_PAR", params0, :istk, "null")
+  end
+
+  # カーネル専用のメモリオブジェクトに含まれていない場合（E_OBJ）［NGKI3223］
+  if CheckMemobjKernel(istk, istksz)
+    error_ercd("E_OBJ", params0, "interrupt context stack area " \
+						"is not included in any kernel memory object")
+  end
+end
+
+#
+#  カーネルメモリプール領域に関するチェック
+#
+$cfgData[:DEF_MPK].each do |_, params|
+  case params[:domain]
+  when $TDOM_KERNEL
+    dominib = SYMBOL("_kernel_dominib_kernel")
+  when $TDOM_NONE
+    dominib = SYMBOL("_kernel_dominib_none")
+  else
+    dominib = SYMBOL("_kernel_dominib_table") \
+								+ (params[:domain] - 1) * $sizeof_DOMINIB
+  end
+  mpksz = PEEK(dominib + $offsetof_DOMINIB_mpksz, $sizeof_size_t)
+  mpk = PEEK(dominib + $offsetof_DOMINIB_mpk, $sizeof_void_ptr)
+
+  # mpkがターゲット定義の制約に合致しない場合（E_PAR）［NGKI5083］
+  if (mpk & ($CHECK_MPK_ALIGN - 1)) != 0
+    error_wrong("E_PAR", params, :mpk, "not aligned")
+  end
+  if $CHECK_MPK_NONNULL && mpk == 0
+    error_wrong("E_PAR", params, :mpk, "null")
+  end
+
+  # カーネル専用のメモリオブジェクトに含まれていない場合（E_OBJ）［NGKI5084］
+  if CheckMemobjKernel(mpk, mpksz)
+    error_ercd("E_OBJ", params, "kernel memory pool area " \
+							"is not included in any kernel memory object")
+  end
+end
+
+#
+#  初期化ルーチンに関するチェック
+#
+inirtnb = SYMBOL("_kernel_inirtnb_table")
+$cfgData[:ATT_INI].each do |_, params|
+  inirtn = PEEK(inirtnb + $offsetof_INIRTNB_inirtn, $sizeof_INIRTN)
+
+  # inirtnがプログラムの先頭番地として正しくない場合（E_PAR）［NGKI3243］
+  if (inirtn & ($CHECK_FUNC_ALIGN - 1)) != 0
+    error_wrong("E_PAR", params, :inirtn, "not aligned")
+  end
+  if $CHECK_FUNC_NONNULL && inirtn == 0
+    error_wrong("E_PAR", params, :inirtn, "null")
+  end
+
+  inirtnb += $sizeof_INIRTNB
+end
+
+#
+#  終了処理ルーチンに関するチェック
+#
+terrtnb = SYMBOL("_kernel_terrtnb_table")
+$cfgData[:ATT_TER].each do |_, params|
+  terrtn = PEEK(terrtnb + $offsetof_TERRTNB_terrtn, $sizeof_TERRTN)
+
+  # terrtnがプログラムの先頭番地として正しくない場合（E_PAR）［NGKI3250］
+  if (terrtn & ($CHECK_FUNC_ALIGN - 1)) != 0
+    error_wrong("E_PAR", params, :terrtn, "not aligned")
+  end
+  if $CHECK_FUNC_NONNULL && terrtn == 0
+    error_wrong("E_PAR", params, :terrtn, "null")
+  end
+
+  terrtnb += $sizeof_TERRTNB
+end

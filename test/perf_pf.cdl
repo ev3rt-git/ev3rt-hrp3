@@ -1,0 +1,53 @@
+/*
+ *		性能評価用プラットフォームのコンポーネント記述ファイル
+ *
+ *  $Id: perf_pf.cdl 285 2018-03-21 02:55:49Z ertl-hiro $
+ */
+
+/*
+ *  テスト用プラットフォーム
+ */
+import("test_pf.cdl");
+
+/*
+ *  実行時間分布集計サービスのセルタイプの定義
+ */
+import("syssvc/tHistogram.cdl");
+import("syssvc/tHistogramAdapter.cdl");
+
+
+/*
+ *  実行時間分布集計サービスのアダプタの組上げ記述
+ */
+cell tHistogramAdapter HistogramAdapter {
+	cHistogram[0] = rKernelDomain::Histogram1.eHistogram;
+	cHistogram[1] = rKernelDomain::Histogram2.eHistogram;
+	cHistogram[2] = rKernelDomain::Histogram3.eHistogram;
+	cHistogram[3] = rKernelDomain::Histogram4.eHistogram;
+	cHistogram[4] = rKernelDomain::Histogram5.eHistogram;
+	cHistogram[5] = rKernelDomain::Histogram6.eHistogram;
+	cHistogram[6] = rKernelDomain::Histogram7.eHistogram;
+	cHistogram[7] = rKernelDomain::Histogram8.eHistogram;
+	cHistogram[8] = rKernelDomain::Histogram9.eHistogram;
+	cHistogram[9] = rKernelDomain::Histogram10.eHistogram;
+};
+
+/*
+ *  これ以降のセルは，カーネルドメイン内に含める
+ */
+region rKernelDomain {
+
+/*
+ *  実行時間分布集計サービスの組上げ記述
+ */
+cell tHistogram Histogram1 {};
+cell tHistogram Histogram2 {};
+cell tHistogram Histogram3 {};
+cell tHistogram Histogram4 {};
+cell tHistogram Histogram5 {};
+cell tHistogram Histogram6 {};
+cell tHistogram Histogram7 {};
+cell tHistogram Histogram8 {};
+cell tHistogram Histogram9 {};
+cell tHistogram Histogram10 {};
+};

@@ -1,0 +1,18 @@
+#! /bin/tcsh
+
+# 【使用方法】
+#
+#  utils/makerelease.rb E_PACKAGE -e hrp3+CHECK
+#  cd hrp3+CHECK
+#  ../utils/makediff
+#  ../utils/diffdiff
+#
+#  ＝問題がなければ，以下を実行＝
+#  foreach i (extension/[a-z]*)
+#    cp $i/DIFF ../$i/
+#  end
+
+# DIFFファイルの生成
+foreach i (extension/[a-z]*)
+  diff -r . $i > $i/DIFF
+end

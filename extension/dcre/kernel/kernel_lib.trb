@@ -1,0 +1,569 @@
+# -*- coding: utf-8 -*-
+#
+#   TOPPERS/HRP Kernel
+#       Toyohashi Open Platform for Embedded Real-Time Systems/
+#       High Reliable system Profile Kernel
+# 
+#   Copyright (C) 2016-2019 by Embedded and Real-Time Systems Laboratory
+#               Graduate School of Information Science, Nagoya Univ., JAPAN
+# 
+#   上記著作権者は，以下の(1)〜(4)の条件を満たす場合に限り，本ソフトウェ
+#   ア（本ソフトウェアを改変したものを含む．以下同じ）を使用・複製・改
+#   変・再配布（以下，利用と呼ぶ）することを無償で許諾する．
+#   (1) 本ソフトウェアをソースコードの形で利用する場合には，上記の著作
+#       権表示，この利用条件および下記の無保証規定が，そのままの形でソー
+#       スコード中に含まれていること．
+#   (2) 本ソフトウェアを，ライブラリ形式など，他のソフトウェア開発に使
+#       用できる形で再配布する場合には，再配布に伴うドキュメント（利用
+#       者マニュアルなど）に，上記の著作権表示，この利用条件および下記
+#       の無保証規定を掲載すること．
+#   (3) 本ソフトウェアを，機器に組み込むなど，他のソフトウェア開発に使
+#       用できない形で再配布する場合には，次のいずれかの条件を満たすこ
+#       と．
+#     (a) 再配布に伴うドキュメント（利用者マニュアルなど）に，上記の著
+#         作権表示，この利用条件および下記の無保証規定を掲載すること．
+#     (b) 再配布の形態を，別に定める方法によって，TOPPERSプロジェクトに
+#         報告すること．
+#   (4) 本ソフトウェアの利用により直接的または間接的に生じるいかなる損
+#       害からも，上記著作権者およびTOPPERSプロジェクトを免責すること．
+#       また，本ソフトウェアのユーザまたはエンドユーザからのいかなる理
+#       由に基づく請求からも，上記著作権者およびTOPPERSプロジェクトを
+#       免責すること．
+#
+#   本ソフトウェアは，無保証で提供されているものである．上記著作権者お
+#   よびTOPPERSプロジェクトは，本ソフトウェアに関して，特定の使用目的
+#   に対する適合性も含めて，いかなる保証も行わない．また，本ソフトウェ
+#   アの利用により直接的または間接的に生じたいかなる損害に関しても，そ
+#   の責任を負わない．
+#
+#   $Id: kernel_lib.trb 660 2019-01-29 14:41:28Z ertl-hiro $
+#
+
+#
+#		生成スクリプト用ライブラリ関数
+#
+
+#
+#  よく使う定数の定義
+#
+$pointerLimit = (1 << ($sizeof_void_ptr * 8))
+$pointerMax = $pointerLimit - 1
+
+#
+#  データセクションのLMAからVMAへのコピー
+#
+def CopyLma
+  $datasecList.each do |key|
+    params = $memObj[key]
+    startData = SYMBOL("__start_#{params[:SLABEL]}")
+    endData= SYMBOL("__end_#{params[:SLABEL]}")
+    startIdata = SYMBOL("__start_#{params[:ILABEL]}")
+    BCOPY(startIdata, startData, endData - startData)
+  end
+
+  if defined?($lmaList)
+    $lmaList.each do |lma|
+      startData = SYMBOL(lma[:START_DATA])
+      endData = SYMBOL(lma[:END_DATA])
+      startIdata = SYMBOL(lma[:START_IDATA])
+      if startData.nil?
+        error_exit("symbol `lma[:START_DATA]' not found")
+      elsif endData.nil?
+        error_exit("symbol `lma[:END_DATA]' not found")
+      elsif startIdata.nil?
+        error_exit("symbol `lma[:START_IDATA]' not found")
+      else
+        BCOPY(startIdata, startData, endData - startData)
+      end
+    end
+  end
+end
+
+#
+#  kernel_cfg.c，kernel_mem.cの共通部分の生成
+#
+def GenerateCFileHeader(genFile)
+  genFile.add(<<EOS)
+#include "kernel/kernel_int.h"
+#include "kernel_cfg.h"
+
+#if !(TKERNEL_PRID == 0x0006U && (TKERNEL_PRVER & 0xf000U) == 0x3000U)
+#error The kernel does not match this configuration file.
+#endif
+EOS
+
+  # インクルードディレクティブ（#include）の生成
+  genFile.comment_header("Include Directives")
+  GenerateIncludes(genFile)
+  genFile.add()
+end
+
+#
+#  アクセス許可ベクタの文字列の生成
+#
+def GenerateAcvct(params)
+  return("{ #{params[:acptn1]}, #{params[:acptn2]}, " \
+						"#{params[:acptn3]}, #{params[:acptn4]} }")
+end
+
+#
+#  保護ドメイン毎に持つ割り付け可能なオブジェクトIDの数のシンボルのリスト
+#
+$tnum_aobjid_list = [
+  :tnum_atskid, :tnum_asemid, :tnum_aflgid, :tnum_adtqid,
+  :tnum_apdqid, :tnum_amtxid, :tnum_ambfid, :tnum_ampfid,
+  :tnum_acycid, :tnum_aalmid
+]
+
+#
+#  保護ドメインに割り付けられたリソース量の定義の生成
+#
+def GenerateDominibResource(genFile, params)
+  $tnum_aobjid_list.each do |tnum_aobjid|
+    genFile.append("#{params[tnum_aobjid] || 0}, ")
+  end
+  genFile.append("#{params[:mpksz]}, ")
+  genFile.append(params[:mpk])
+end
+
+#
+#  保護ドメイン管理情報の生成
+#
+def GenerateDominib(genFile)
+  genFile.comment_header("Protection Domain Management Functions")
+
+  # 保護ドメインのID番号を保持する変数
+  if $USE_EXTERNAL_ID
+    $udomainList.each do |key|
+      genFile.add("const ID #{$domData[key][:domid]}_id = #{key};")
+    end
+    genFile.add()
+  end
+
+  # 保護ドメインID番号の最大値
+  genFile.add2("const ID _kernel_tmax_domid = " \
+								"(TMIN_DOMID + TNUM_DOMID - 1);")
+
+  # 保護ドメイン管理ブロックの生成
+  genFile.add("DOMCB _kernel_domcb_kernel;")
+  genFile.add("DOMCB _kernel_domcb_table[TNUM_DOMID];")
+  genFile.add2("DOMCB _kernel_domcb_none;")
+
+  # 保護ドメイン初期化コンテキストブロックのための宣言
+  if defined? PrepareDominictxb()
+    PrepareDominictxb(genFile)
+  end
+
+  # カーネルドメインの保護ドメイン初期化ブロックの生成
+  params = $domData[$TDOM_KERNEL]
+  genFile.append("const DOMINIB _kernel_dominib_kernel = { TACP_KERNEL, " \
+						"&(#{params[:schedcb]}), #{params[:tmevtHeap]}, " \
+						"INT_PRIORITY(#{params[:mintpri]}), ")
+  if $USE_DOMINICTXB
+    genFile.append("#{$kernelDominictxb}, ")
+  end
+  genFile.append(GenerateAcvct(params))
+  genFile.append(", ")
+  genFile.append("&(_kernel_domcb_table[TNUM_DOMID]), ")
+  GenerateDominibResource(genFile, params)
+  genFile.add2(" };")
+
+  # 保護ドメイン初期化ブロックの生成
+  if !$udomainList.empty?
+    genFile.add("const DOMINIB _kernel_dominib_table[TNUM_DOMID] = {")
+    $udomainList.each_with_index do |key, index|
+      params = $domData[key]
+      genFile.add(",") if index > 0
+
+      genFile.append("\t{ TACP(#{params[:domid]}), &(#{params[:schedcb]}), ")
+      genFile.append("#{params[:tmevtHeap]}, ")
+      genFile.append("INT_PRIORITY(#{params[:mintpri]}), ")
+      if $USE_DOMINICTXB
+        genFile.append("#{GenerateDominictxb(key, params)}, ")
+      end
+      genFile.append(GenerateAcvct(params))
+      genFile.append(", ")
+      genFile.append("&(_kernel_domcb_table[#{index}]), ")
+      GenerateDominibResource(genFile, params)
+      genFile.append(" }")
+    end
+    genFile.add
+    genFile.add2("};")
+  else
+    genFile.add2("TOPPERS_EMPTY_LABEL(const DOMINIB, _kernel_dominib_table);")
+  end
+
+  # 無所属に対する保護ドメイン初期化ブロックの生成
+  params = $domData[$TDOM_NONE]
+  genFile.append("const DOMINIB _kernel_dominib_none = { " \
+								"TACP_SHARED, NULL, NULL, 0, ")
+  if $USE_DOMINICTXB
+    if defined?($noneDominictxb)
+      genFile.append("#{$noneDominictxb}, ")
+    else
+      genFile.append("#{$kernelDominictxb}, ")
+    end
+  end
+  genFile.append(GenerateAcvct(params))
+  genFile.append(", ")
+  genFile.append("&(_kernel_domcb_table[TNUM_DOMID + 1]), ")
+  GenerateDominibResource(genFile, params)
+  genFile.add2(" };")
+end
+
+#
+#  メモリオブジェクトの重なりのチェックとアドレス順のソート
+#
+def SortMemtopList
+  $sortedMemtopList = []
+  prevParams = nil
+  $memObjList.sort_by {|key| [ $memObj[key][:baseaddr], key ]}.each do |key|
+    params = $memObj[key]
+
+    # リンクオンリーセクションはスキップする
+    next if params[:linkonly]
+
+    # 空のメモリオブジェクトの場合
+    if params[:baseaddr] == params[:endaddr]
+      if !prevParams.nil? && prevParams[:maendaddr] == params[:baseaddr] \
+								&& params[:endaddr] < params[:aendaddr]
+        prevParams[:maendaddr] = params[:aendaddr]
+        prevParams[:MAEND_MLABEL] = params[:MLABEL]
+      end
+      # 残りの処理はスキップする
+      next
+    end
+
+    if prevParams.nil? || prevParams[:maendaddr] <= params[:baseaddr]
+      # メモリオブジェクトの領域に重なりがない場合
+      if !prevParams.nil? && prevParams[:maendaddr] == params[:baseaddr]
+        # メモリオブジェクトの領域が連続している場合
+        prevParams[:suppressend] = true
+      end
+      $sortedMemtopList.push(key)
+    else
+      # メモリオブジェクトの領域に重なりがある場合
+      if $OMIT_CHECK_USTACK_OVERLAP \
+				&& params[:type] == :USTACK && prevParams[:type] == :USTACK \
+				&& prevParams[:domain] == params[:domain] \
+				&& prevParams[:baseaddr] == params[:baseaddr] \
+				&& prevParams[:aendaddr] == params[:aendaddr]
+        # ユーザスタック領域の共有
+        params[:merged] = true
+      else
+        if params[:type] == :ATTMEM
+          error_ercd("E_OBJ", params, "memory object registered " \
+						"with %apiname overlaps with another memory object")
+        elsif prevParams[:type] == :ATTMEM
+          error_ercd("E_OBJ", prevParams, "memory object registered " \
+						"with %apiname overlaps with another memory object")
+        elsif params[:type] == :USTACK
+          error_ercd("E_OBJ", params, "user stack area registered " \
+						"with %apiname overlaps with another memory object")
+        elsif prevParams[:type] == :USTACK
+          error_ercd("E_OBJ", prevParams, "user stack area registered " \
+						"with %apiname overlaps with another memory object")
+        else
+          error_ercd("E_SYS", params, "memory objects overlap")
+        end
+      end
+    end
+    params[:maendaddr] = params[:aendaddr]
+    params[:MAEND_MLABEL] = params[:MLABEL]
+    prevParams = params
+  end
+  if prevParams[:maendaddr] == $pointerLimit
+    prevParams[:suppressend] = true
+  end
+end
+
+#
+#  仮メモリオブジェクト初期化ブロックの生成
+#
+def GenerateTentativeMeminib
+  # tnum_meminibの生成
+  $kernelMemC.add2("const uint_t _kernel_tnum_meminib = #{$meminibSize}U;")
+
+  # memtop_tableの生成
+  numMeminib = 0
+  $kernelMemC.append("void *const _kernel_memtop_table[#{$meminibSize}] = {")
+  $memObjList.each do |key|
+    params = $memObj[key]
+    next if params[:linker]
+
+    if numMeminib == 0
+      $kernelMemC.add
+    else
+      $kernelMemC.add(",")
+    end
+    $kernelMemC.append("\t(void *)(#{params[:base]})")
+    numMeminib += 1
+  end
+  if numMeminib > 0
+    $kernelMemC.add
+  else
+    $kernelMemC.append(" 0 ")
+  end
+  $kernelMemC.add2("};")
+
+  # meminib_tableの生成
+  $kernelMemC.add2("const MEMINIB _kernel_meminib_table[#{$meminibSize}] = " \
+												"{{ TA_NOEXS, 0U, 0U, 0U }};")
+end
+
+#
+#  メモリオブジェクト初期化ブロックの生成
+#
+def GenerateMeminib
+  # メモリオブジェクト初期化ブロックに出力するエントリの決定
+  #
+  # numMeminib：メモリオブジェクト初期化ブロックに出力するエントリ数
+  numMeminib = 0
+  $sortedMemtopList.each_with_index do |key, index|
+    params = $memObj[key]
+    if index == 0 && params[:baseaddr] != 0
+      numMeminib += 1
+    end
+    numMeminib += 1
+    if !params[:suppressend]
+      numMeminib += 1
+    end
+  end
+
+  if $TOPPERS_ML_AUTO
+    # $meminibSizeの妥当性チェック
+    if $meminibSize < numMeminib
+      error("E_SYS: illegal memory object initialization block size")
+    end
+  else
+    $meminibSize = numMeminib
+  end
+
+  # memtopTableで参照するラベルの宣言の生成
+  $sortedMemtopList.each do |key|
+    params = $memObj[key]
+    if params[:linker]
+      $kernelMemC.add("extern char __start_#{params[:MLABEL]}[];")
+      if !params[:suppressend]
+        $kernelMemC.add("extern char __aend_#{params[:MAEND_MLABEL]}[];")
+      end
+    end
+  end
+  $kernelMemC.add
+
+  # tnum_meminibの生成
+  $kernelMemC.add2("const uint_t _kernel_tnum_meminib = #{numMeminib}U;")
+
+  # memtop_tableの生成
+  $kernelMemC.add("void *const _kernel_memtop_table[#{$meminibSize}] = {")
+  $sortedMemtopList.each_with_index do |key, index|
+    $kernelMemC.add(",") if index > 0
+    params = $memObj[key]
+    if index == 0 && params[:baseaddr] != 0
+      $kernelMemC.add("\t0,")
+    end
+    if params[:linker]
+      $kernelMemC.append("\t__start_#{params[:MLABEL]} " \
+						"/* #{sprintf("0x%08x", params[:baseaddr])} */")
+      if !params[:suppressend]
+        $kernelMemC.add(",")
+        $kernelMemC.append("\t__aend_#{params[:MAEND_MLABEL]} ")
+        $kernelMemC.append("/* #{sprintf("0x%08x", params[:maendaddr])} */")
+      end
+    else
+      $kernelMemC.append("\t(void *)(#{params[:base]}) " \
+						"/* #{sprintf("0x%08x", params[:baseaddr])} */")
+      if !params[:suppressend]
+        $kernelMemC.add(",")
+        $kernelMemC.append("\t(void *)(((char *)(#{params[:base]})) " \
+						"+ (#{params[:size]})) " \
+						"/* #{sprintf("0x%08x", params[:endaddr])} */")
+      end
+    end
+  end
+  $kernelMemC.add
+  $kernelMemC.add2("};")
+
+  # meminib_tableの生成
+  $kernelMemC.add("const MEMINIB _kernel_meminib_table[#{$meminibSize}] = {")
+  $sortedMemtopList.each_with_index do |key, index|
+    $kernelMemC.add(",") if index > 0
+    params = $memObj[key]
+    if index == 0 && params[:baseaddr] != 0
+      $kernelMemC.add("\t{ TA_NOEXS, 0U, 0U, 0U },")
+    end
+    $kernelMemC.append("\t{")
+    case params[:type]
+    when :USTACK
+      $kernelMemC.append(" TA_USTACK|(#{params[:accatr]}),")
+    when :ATTMEM
+      $kernelMemC.append(" TA_ATTMEM|(#{params[:accatr]}),")
+    else
+      $kernelMemC.append(" #{params[:accatr]},")
+    end
+    $kernelMemC.append(" #{params[:acptn1]}, #{params[:acptn2]}, " \
+												"#{params[:acptn4]} }")
+    if !params[:suppressend]
+      $kernelMemC.add(",")
+      $kernelMemC.append("\t{ TA_NOEXS, 0U, 0U, 0U }")
+    end
+  end
+  $kernelMemC.add
+  $kernelMemC.add2("};")
+end
+
+#
+#  dataセクション初期化ブロックのサイズの適正化処理
+#
+# $datasecListから，空のdataセクションを除外
+def OptimizeDatasecList
+  optimizedDatasecList = []
+  $datasecList.each do |key|
+    params = $memObj[key]
+    if SYMBOL("__start_#{params[:SLABEL]}") \
+								!= SYMBOL("__end_#{params[:SLABEL]}")
+      optimizedDatasecList.push(key)
+    end
+  end
+  $datasecList = optimizedDatasecList
+end
+
+#
+#  仮dataセクション初期化ブロックの生成
+#
+def GenerateTentativeDatasecList
+  datasecSize = $datasecList.size
+  $kernelMemC.add2("const uint_t _kernel_tnum_datasec = #{datasecSize}U;")
+  if datasecSize > 0
+    $kernelMemC.add2("const DATASECINIB _kernel_datasecinib_table" \
+										"[#{datasecSize}] = {{ 0, 0, 0 }};")
+  else
+    $kernelMemC.add2("TOPPERS_EMPTY_LABEL(const DATASECINIB, " \
+										"_kernel_datasecinib_table);")
+  end
+end
+
+#
+#  bssセクション初期化ブロックのサイズの適正化処理
+#
+# $bsssecListから，空のbssセクションを除外
+def OptimizeBsssecList
+  optimizedBsssecList = []
+  $bsssecList.each do |key|
+    params = $memObj[key]
+    if SYMBOL("__start_#{params[:SLABEL]}") \
+								!= SYMBOL("__end_#{params[:SLABEL]}")
+      optimizedBsssecList.push(key)
+    end
+  end
+  $bsssecList = optimizedBsssecList
+end
+
+#
+#  仮bssセクション初期化ブロックの生成
+#
+def GenerateTentativeBsssecList
+  bsssecSize = $bsssecList.size
+  $kernelMemC.add2("const uint_t _kernel_tnum_bsssec = #{bsssecSize}U;")
+  if bsssecSize > 0
+    $kernelMemC.add2("const BSSSECINIB _kernel_bsssecinib_table" \
+										"[#{bsssecSize}] = {{ 0, 0 }};")
+  else
+    $kernelMemC.add2("TOPPERS_EMPTY_LABEL(const BSSSECINIB, " \
+										"_kernel_bsssecinib_table);")
+  end
+end
+
+#
+#  ターゲット依存部のためのメモリ保護単位に関する情報の生成
+#
+# $memProt[key][:baseaddr]：メモリ保護単位の先頭番地
+# $memProt[key][:aendaddr]：メモリ保護単位のアラインした終了番地
+# $memProt[key][:poffset]：物理アドレスとのオフセット
+# $memProt[key][:accatr]：メモリオブジェクトアクセス属性
+# $memProt[key][:acptn1]：通常操作1（書込み）のアクセス許可パターン
+# $memProt[key][:acptn2]：通常操作2（読出し，実行）のアクセス許可パターン
+# $memProt[key][:domain]：属するドメイン（無所属の場合はTDOM_NONE）
+# $memProt[key][:global]：メモリ保護属性が，すべてのユーザドメインで同一
+#						  （ユーザドメインがない場合も含む）
+# $memProt[key][:private]：メモリ保護属性が，属するユーザドメイン以外で
+#						   同一（ユーザドメインに属する場合のみ有効）
+# $memProt[key][:mokey]：先頭の（統合前の）メモリオブジェクトのキー
+#
+# 主にMMUを持つターゲット向けの情報であり，MPUを持つターゲットでは必要
+# ない．
+#
+def GenerateMemProt
+  $memProt = {}
+  lastMPKey = 0
+  prevaddr = 0
+
+  $memObj.select {|_, params| params[:MP_TOP]} \
+	.sort_by {|key, params| [ params[:baseaddr], key ]}.each do |key, params|
+    # リンクオンリーセクションはスキップする
+    next if params[:linkonly]
+
+    # メモリ保護単位の先頭番地とアラインした終了番地を取り出す
+    if params[:linker]
+      baseaddr = SYMBOL("__start_#{params[:PLABEL]}")
+      aendaddr = SYMBOL("__aend_#{params[:PLABEL]}")
+    else
+      baseaddr = params[:baseaddr]
+      aendaddr = params[:aendaddr]
+    end
+
+    # メモリ保護単位に関する情報の生成
+    if baseaddr < aendaddr && !params.has_key?(:merged)
+      if prevaddr < baseaddr
+        # 未使用領域の登録
+        params2 = {}
+        params2[:baseaddr] = prevaddr
+        params2[:aendaddr] = baseaddr
+        $memProt[lastMPKey += 1] = params2
+      end
+
+      # メモリ保護領域の登録
+      params2 = {}
+      params2[:baseaddr] = baseaddr
+      params2[:aendaddr] = aendaddr
+      params2[:poffset] = params[:poffset]
+      params2[:accatr] = params[:accatr]
+      params2[:acptn1] = params[:acptn1]
+      params2[:acptn2] = params[:acptn2]
+      params2[:domain] = params[:domain]
+      params2[:mokey] = key
+
+      # params2[:global]の設定
+      if (params2[:acptn1] == $TACP_KERNEL \
+					|| params2[:acptn1] == $TACP_SHARED) \
+			&& (params2[:acptn2] == $TACP_KERNEL \
+					|| params2[:acptn2] == $TACP_SHARED)
+        params2[:global] = true
+      end
+
+      # params2[:private]の設定
+      if params2[:domain] > 0
+        domptn = (1 << (params2[:domain] - 1))
+        if (params2[:acptn1] == $TACP_KERNEL \
+					|| params2[:acptn1] == $TACP_SHARED \
+					|| params2[:acptn1] == domptn) \
+			&& (params2[:acptn2] == $TACP_KERNEL \
+					|| params2[:acptn2] == $TACP_SHARED \
+					|| params2[:acptn2] == domptn)
+          params2[:private] = true
+        end
+      end
+
+      $memProt[lastMPKey += 1] = params2
+      prevaddr = aendaddr
+    end
+  end
+
+  if prevaddr < $pointerLimit
+    # 未使用領域の登録
+    params2 = {}
+    params2[:baseaddr] = prevaddr
+    params2[:aendaddr] = $pointerLimit
+    $memProt[lastMPKey += 1] = params2
+  end
+end

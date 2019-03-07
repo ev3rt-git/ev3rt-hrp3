@@ -1,0 +1,124 @@
+# -*- coding: utf-8 -*-
+#
+#   TOPPERS/HRP Kernel
+#       Toyohashi Open Platform for Embedded Real-Time Systems/
+#       High Reliable system Profile Kernel
+# 
+#   Copyright (C) 2016-2018 by Embedded and Real-Time Systems Laboratory
+#               Graduate School of Information Science, Nagoya Univ., JAPAN
+# 
+#   上記著作権者は，以下の(1)〜(4)の条件を満たす場合に限り，本ソフトウェ
+#   ア（本ソフトウェアを改変したものを含む．以下同じ）を使用・複製・改
+#   変・再配布（以下，利用と呼ぶ）することを無償で許諾する．
+#   (1) 本ソフトウェアをソースコードの形で利用する場合には，上記の著作
+#       権表示，この利用条件および下記の無保証規定が，そのままの形でソー
+#       スコード中に含まれていること．
+#   (2) 本ソフトウェアを，ライブラリ形式など，他のソフトウェア開発に使
+#       用できる形で再配布する場合には，再配布に伴うドキュメント（利用
+#       者マニュアルなど）に，上記の著作権表示，この利用条件および下記
+#       の無保証規定を掲載すること．
+#   (3) 本ソフトウェアを，機器に組み込むなど，他のソフトウェア開発に使
+#       用できない形で再配布する場合には，次のいずれかの条件を満たすこ
+#       と．
+#     (a) 再配布に伴うドキュメント（利用者マニュアルなど）に，上記の著
+#         作権表示，この利用条件および下記の無保証規定を掲載すること．
+#     (b) 再配布の形態を，別に定める方法によって，TOPPERSプロジェクトに
+#         報告すること．
+#   (4) 本ソフトウェアの利用により直接的または間接的に生じるいかなる損
+#       害からも，上記著作権者およびTOPPERSプロジェクトを免責すること．
+#       また，本ソフトウェアのユーザまたはエンドユーザからのいかなる理
+#       由に基づく請求からも，上記著作権者およびTOPPERSプロジェクトを
+#       免責すること．
+# 
+#   本ソフトウェアは，無保証で提供されているものである．上記著作権者お
+#   よびTOPPERSプロジェクトは，本ソフトウェアに関して，特定の使用目的
+#   に対する適合性も含めて，いかなる保証も行わない．また，本ソフトウェ
+#   アの利用により直接的または間接的に生じたいかなる損害に関しても，そ
+#   の責任を負わない．
+# 
+#   $Id: svc_manage.trb 665 2019-02-03 17:06:18Z ertl-hiro $
+# 
+
+#
+#		拡張サービスコール管理機能の生成スクリプト
+#
+
+#
+#  kernel_cfg.hの生成
+#
+# 拡張サービスコール番号の最大値をtmax_fncdに求める
+tmax_fncd = 0
+$cfgData[:DEF_SVC].each do |_, params|
+  if params[:fncd] > tmax_fncd
+    tmax_fncd = params[:fncd]
+  end
+end
+
+$kernelCfgH.add2("#define TMAX_FNCD\t#{tmax_fncd}")
+
+#
+#  kernel_cfg.cの生成
+#
+$kernelCfgC.comment_header("Extended Service Calls")
+
+#
+#  拡張サービスコールに関するエラーチェック
+#
+#  $svcList：処理済みの拡張サービスコール番号のリスト
+#
+$svcList = {}
+$cfgData[:DEF_SVC].each do |key, params|
+  # カーネルドメインの囲みの中に記述されていない場合（E_RSATR）［NGKI3183］
+  if !params.has_key?(:domain) || params[:domain] != $TDOM_KERNEL
+    error_ercd("E_RSATR", params, "%apiname of `%fncd' " \
+								"must be within the kernel domain")
+  end
+
+  # fncdが0以下の場合（E_PAR）［NGKI3173］
+  if params[:fncd] <= 0
+    error_illegal("E_PAR", params, :fncd)
+  end
+
+  # fncdがDEF_SVCによって設定済みの場合（E_OBJ）［NGKI3181］
+  if $svcList.has_key?(params[:fncd].val)
+    error_wrong("E_OBJ", params, :fncd, "duplicated")
+  end
+
+  # svcatrが無効の場合（E_RSATR）［NGKI3172］［NGKI3686］［NGKI3687］
+  #（TA_NULLでない場合）
+  if (params[:svcatr] & ~($TARGET_SVCATR)) != 0
+    error_illegal_sym("E_RSATR", params, :svcatr, :fncd)
+  end
+
+  # $svc_order[SVC.FNCD[order]] = order$
+
+  # $svcListに登録
+  $svcList[params[:fncd].val] = key
+end
+
+#
+#  機能番号の最大値
+#
+$kernelCfgC.add2("const FN _kernel_tmax_fncd = TMAX_FNCD;")
+
+#
+#  拡張サービスコール分岐テーブルの生成
+#
+if $cfgData[:DEF_SVC].size > 0
+  $kernelCfgC.add("const SVCINIB _kernel_svcinib_table[TMAX_FNCD] = {")
+  1.upto(tmax_fncd).each_with_index do |fncd, index|
+    $kernelCfgC.add(",") if index > 0
+    if $svcList.has_key?(fncd)
+      params = $cfgData[:DEF_SVC][$svcList[fncd]]
+      $kernelCfgC.append("\t{ (EXTSVC)(#{params[:extsvc]}), " \
+											"#{params[:stksz]} }")
+    else
+      $kernelCfgC.append("\t{ NULL, 0 }")
+    end
+  end
+  $kernelCfgC.add
+  $kernelCfgC.add2("};")
+else
+  $kernelCfgC.add2("TOPPERS_EMPTY_LABEL(const SVCINIB, " \
+										"_kernel_svcinib_table);")
+end

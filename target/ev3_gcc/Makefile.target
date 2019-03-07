@@ -1,0 +1,42 @@
+#
+#		Makefile のターゲット依存部（EV3RT用）
+# 
+
+#
+#  システム名，チップ名，コア名，開発環境名の定義
+#
+SYS = ev3
+CHIP = am1808
+CORE = arm
+TOOL = gcc
+
+#
+#  FPUサポートとコーリングコンベンション
+#
+#  FPUを使用する場合は，USE_ARM_FPUをマクロ定義し，使用するコーリング
+#  コンベンションに応じて，-mfloat-abi=softfpまたは-mfloat-abi=hardオ
+#  プションをつける．
+#
+#CDEFS := $(CDEFS) -DUSE_ARM_FPU
+#COPTS := $(COPTS) -mfloat-abi=softfp
+#COPTS := $(COPTS) -mfloat-abi=hard
+
+#
+#  コンパイルオプション
+#
+INCLUDES := $(INCLUDES) -I$(TARGETDIR)
+COPTS := $(COPTS) -mlittle-endian
+LDFLAGS := $(LDFLAGS) -mlittle-endian
+
+#
+#  カーネルに関する定義
+#
+KERNEL_DIRS := $(KERNEL_DIRS) $(TARGETDIR)
+KERNEL_COBJS += target_kernel_impl.o
+
+include $(TARGETDIR)/Makefile.ev3
+
+#
+#  チップ依存部
+#
+include $(SRCDIR)/arch/$(CORE)_$(TOOL)/$(CHIP)/Makefile.chip

@@ -1,0 +1,10 @@
+/*
+ *		C言語で記述されたアプリケーションから，TECSベースの実行時間分布
+ *		集計サービスを呼び出すためのアダプタ用セルタイプの定義
+ * 
+ *  $Id: tHistogramAdapter.cdl 285 2018-03-21 02:55:49Z ertl-hiro $
+ */
+[singleton, active]
+celltype tHistogramAdapter {
+	call	sHistogram		cHistogram[];
+};

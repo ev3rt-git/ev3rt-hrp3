@@ -1,0 +1,20 @@
+PACKAGE hrp3_arch_arm_gcc
+
+MANIFEST
+Makefile.chip
+chip_kernel.h
+chip_kernel.trb
+chip_kernel_impl.c
+chip_kernel_impl.h
+chip_rename.def
+chip_rename.h
+chip_stddef.h
+chip_timer.cfg
+chip_timer.h
+chip_unrename.h
+tSIOPortZynq7000.cdl
+tSIOPortZynq7000Main_inline.h
+tXUartPs.c
+tXUartPs.cdl
+xuartps.h
+zynq7000.h

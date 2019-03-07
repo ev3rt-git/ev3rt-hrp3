@@ -1,0 +1,41 @@
+CRE_TSK #tskid* { .tskatr &exinf &task +itskpri .stksz ^stk? .sstksz? &sstk? }
+SAC_TSK %tskid* { .acptn1 .acptn2 .acptn3 .acptn4 }
+CRE_SEM #semid* { .sematr .isemcnt .maxsem }
+SAC_SEM %semid* { .acptn1 .acptn2 .acptn3 .acptn4 }
+CRE_FLG #flgid* { .flgatr .iflgptn }
+SAC_FLG %flgid* { .acptn1 .acptn2 .acptn3 .acptn4 }
+CRE_DTQ #dtqid* { .dtqatr .dtqcnt &dtqmb? }
+SAC_DTQ %dtqid* { .acptn1 .acptn2 .acptn3 .acptn4 }
+CRE_PDQ #pdqid* { .pdqatr .pdqcnt +maxdpri &pdqmb? }
+SAC_PDQ %pdqid* { .acptn1 .acptn2 .acptn3 .acptn4 }
+CRE_MTX #mtxid* { .mtxatr +ceilpri? }
+SAC_MTX %mtxid* { .acptn1 .acptn2 .acptn3 .acptn4 }
+CRE_MBF #mbfid* { .mbfatr .maxmsz .mbfsz &mbfmb? }
+SAC_MBF %mbfid* { .acptn1 .acptn2 .acptn3 .acptn4 }
+CRE_MPF #mpfid* { .mpfatr .blkcnt .blksz &mpf? &mpfmb? }
+SAC_MPF %mpfid* { .acptn1 .acptn2 .acptn3 .acptn4 }
+CRE_CYC #cycid* { .cycatr { .nfymode &par1 &par2? &par3? &par4? } .cyctim .cycphs }
+SAC_CYC %cycid* { .acptn1 .acptn2 .acptn3 .acptn4 }
+CRE_ALM #almid* { .almatr { .nfymode &par1 &par2? &par3? &par4? } }
+SAC_ALM %almid* { .acptn1 .acptn2 .acptn3 .acptn4 }
+DEF_OVR { .ovratr &ovrhdr }
+SAC_SYS { .acptn1 .acptn2 .acptn3 .acptn4 }
+ATT_REG $regname { .regatr ^base .size }
+DEF_SRG $stdrom $stdram $stdsrom? $stdsram?
+ATT_SEC $secname { .mematr $regname? } {? .acptn1 .acptn2 .acptn3 .acptn4 }
+ATT_MOD $modname {? .acptn1 .acptn2 .acptn3 .acptn4 }
+ATT_MEM { .accatr ^base .size } {? .acptn1 .acptn2 .acptn3 .acptn4 }
+ATT_PMA[ATT_MEM] { .accatr ^base .size ^paddr } {? .acptn1 .acptn2 .acptn3 .acptn4 }
+CFG_INT .intno* { .intatr +intpri }
+CRE_ISR #isrid* { .isratr &exinf .intno &isr +isrpri }
+DEF_INH .inhno* { .inhatr &inthdr }
+DEF_EXC .excno* { .excatr &exchdr }
+DEF_SVC .fncd* { .svcatr &extsvc .stksz }
+ACV_DOM { .acptn1 .acptn2 .acptn3 .acptn4 }
+LMT_DOM { +mintpri }
+DEF_SCY { .scyctim }
+CRE_SOM #somid* { .somatr &nxtsom? }
+ATT_TWD { .domid %somid .twdord .twdlen {? .nfymode &par1 &par2? &par3? &par4? } }
+DEF_ICS { .istksz &istk? }
+ATT_INI { .iniatr &exinf &inirtn }
+ATT_TER { .teratr &exinf &terrtn }

@@ -1,0 +1,60 @@
+PACKAGE hrp3_arch_arm_gcc
+VERSION 3.1.0
+
+E_PACKAGE
+MANIFEST
+
+doc/arm_user.txt
+doc/hrp3_arm_design.txt
+
+common/Makefile.core
+common/arm.c
+common/arm.h
+common/arm_insn.h
+common/arm_mmu.trb
+common/cfg1_out.ld
+common/core_asm.inc
+common/core_cfg1_out.h
+common/core_check.trb
+common/core_kernel.h
+common/core_kernel.trb
+common/core_kernel_impl.c
+common/core_kernel_impl.h
+common/core_ldscript.trb
+common/core_mem.trb
+common/core_offset.trb
+common/core_opt.trb
+common/core_rename.def
+common/core_rename.h
+common/core_sil.h
+common/core_stddef.h
+common/core_support.S
+common/core_sym.def
+common/core_syssvc.h
+common/core_svc.h
+common/core_test.h
+common/core_unrename.h
+common/gic_kernel_impl.c
+common/gic_kernel_impl.h
+common/gic_support.S
+common/mpcore.h
+common/mpcore_kernel_impl.c
+common/mpcore_kernel_impl.h
+common/mpcore_timer.c
+common/mpcore_timer.cfg
+common/mpcore_timer.h
+common/pl310.c
+common/pl310.h
+common/sp804.h
+common/start.S
+common/tUartPL011.c
+common/tUartPL011.cdl
+common/uart_pl011.h
+
+INCLUDE rza1/MANIFEST
+INCLUDE zynq7000/MANIFEST
+
+INCLUDE ../../target/ct11mpcore_gcc/MANIFEST
+INCLUDE ../../target/simtimer_ct11mpcore_gcc/MANIFEST
+INCLUDE ../../target/gr_peach_gcc/MANIFEST
+INCLUDE ../../target/zybo_gcc/MANIFEST

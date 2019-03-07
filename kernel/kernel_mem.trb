@@ -1,0 +1,245 @@
+# -*- coding: utf-8 -*-
+#
+#   TOPPERS/HRP Kernel
+#       Toyohashi Open Platform for Embedded Real-Time Systems/
+#       High Reliable system Profile Kernel
+# 
+#   Copyright (C) 2016-2018 by Embedded and Real-Time Systems Laboratory
+#               Graduate School of Information Science, Nagoya Univ., JAPAN
+# 
+#   上記著作権者は，以下の(1)〜(4)の条件を満たす場合に限り，本ソフトウェ
+#   ア（本ソフトウェアを改変したものを含む．以下同じ）を使用・複製・改
+#   変・再配布（以下，利用と呼ぶ）することを無償で許諾する．
+#   (1) 本ソフトウェアをソースコードの形で利用する場合には，上記の著作
+#       権表示，この利用条件および下記の無保証規定が，そのままの形でソー
+#       スコード中に含まれていること．
+#   (2) 本ソフトウェアを，ライブラリ形式など，他のソフトウェア開発に使
+#       用できる形で再配布する場合には，再配布に伴うドキュメント（利用
+#       者マニュアルなど）に，上記の著作権表示，この利用条件および下記
+#       の無保証規定を掲載すること．
+#   (3) 本ソフトウェアを，機器に組み込むなど，他のソフトウェア開発に使
+#       用できない形で再配布する場合には，次のいずれかの条件を満たすこ
+#       と．
+#     (a) 再配布に伴うドキュメント（利用者マニュアルなど）に，上記の著
+#         作権表示，この利用条件および下記の無保証規定を掲載すること．
+#     (b) 再配布の形態を，別に定める方法によって，TOPPERSプロジェクトに
+#         報告すること．
+#   (4) 本ソフトウェアの利用により直接的または間接的に生じるいかなる損
+#       害からも，上記著作権者およびTOPPERSプロジェクトを免責すること．
+#       また，本ソフトウェアのユーザまたはエンドユーザからのいかなる理
+#       由に基づく請求からも，上記著作権者およびTOPPERSプロジェクトを
+#       免責すること．
+#
+#   本ソフトウェアは，無保証で提供されているものである．上記著作権者お
+#   よびTOPPERSプロジェクトは，本ソフトウェアに関して，特定の使用目的
+#   に対する適合性も含めて，いかなる保証も行わない．また，本ソフトウェ
+#   アの利用により直接的または間接的に生じたいかなる損害に関しても，そ
+#   の責任を負わない．
+#
+#   $Id: kernel_mem.trb 357 2018-04-14 08:42:39Z ertl-hiro $
+#
+
+#
+#  共通部の読込み
+#
+IncludeTrb("kernel/kernel_lib.trb")
+
+#
+#  タイムスタンプファイルの指定
+#
+$timeStampFileName = "kernel_mem.timestamp"
+
+#
+#  データセクションのLMAからVMAへのコピー
+#
+CopyLma()
+
+#
+#  kernel_mem.cの先頭部分の生成
+#
+$kernelMemC = GenFile.new("kernel_mem.c")
+$kernelMemC.add("/* kernel_mem.c */")
+GenerateCFileHeader($kernelMemC)
+
+#
+#  保護ドメイン
+#
+if $USE_LATERPASS_DOMINIB
+  GenerateDominib($kernelMemC)
+end
+
+#
+#  シンボルと仮メモリオブジェクト初期化ブロックの読込み
+#
+# $memObj[key][:baseaddr]：メモリオブジェクトの先頭番地
+# $memObj[key][:endaddr]：メモリオブジェクトの終了番地
+# $memObj[key][:aendaddr]：メモリオブジェクトのアラインした終了番地
+# $memObj[key][:poffset]：物理アドレスとのオフセット
+#
+if !$OMIT_STANDARD_MEMINIB
+  memtopTable = SYMBOL("_kernel_memtop_table")
+  offset = 0
+
+  $memObjList.each do |key|
+    params = $memObj[key]
+    if params[:linker]
+      params[:baseaddr] = SYMBOL("__start_#{params[:MLABEL]}")
+      params[:endaddr] = SYMBOL("__end_#{params[:MLABEL]}")
+      params[:aendaddr] = SYMBOL("__aend_#{params[:MLABEL]}")
+      params[:poffset] = 0
+    else
+      params[:baseaddr] = PEEK(memtopTable + offset, $sizeof_void_ptr)
+      offset += 4
+      params[:endaddr] = params[:baseaddr] + params[:size]
+      params[:aendaddr] = params[:endaddr]
+      if params.has_key?(:paddr)
+        params[:poffset] = params[:paddr] - params[:baseaddr]
+      else
+        params[:poffset] = 0
+      end
+    end
+
+    if params[:aendaddr] > $pointerLimit
+      if params[:type] == :ATTMEM
+        error_ercd("E_PAR", params, "%%size is too large in %apiname")
+      else
+        error_ercd("E_SYS", params, "illegal memory object size")
+      end
+    end
+  end
+end
+
+#
+#  メモリオブジェクト間に想定していない隙間がないかのチェック
+#
+checkParams = nil
+$memObjList.each do |key|
+  params = $memObj[key]
+
+  if !checkParams.nil?
+    if checkParams[:aendaddr] != params[:baseaddr]
+      warning("unexpected gap between __aend_#{checkParams[:MLABEL]}" \
+									" and __start_#{params[:MLABEL]}.");
+    end
+    checkParams = nil
+  end
+  if params[:linker] && !($memObj[params[:moLast]][:MEMREG_LAST])
+    checkParams = params
+  end
+end
+
+#
+#  メモリオブジェクトの重なりのチェックとアドレス順のソート
+#
+# $memObj[key][:maendaddr]：空のメモリオブジェクトを取り除いた後のメモ
+#							リオブジェクトのアラインした終了番地
+# $memObj[key][:MAEND_MLABEL]：[:maendaddr]に対応するメモリオブジェク
+#							   トのラベル
+# $memObj[key][:suppressend]：次のメモリオブジェクトと隣接しているか？
+# $memObj[key][:merged]：併合されたユーザスタック領域か？
+# $sortedMemtopList：メモリオブジェクトのベースアドレス順のリスト（空
+#					 のメモリオブジェクトは含めない，併合されたユーザ
+#					 スタック領域は含めない，リンクオンリーセクション
+#					 は含めない）
+#
+SortMemtopList()
+
+#
+#  メモリオブジェクト初期化ブロックの生成
+#
+if !$OMIT_STANDARD_MEMINIB
+  $kernelMemC.comment_header("Memory Object Initialization Information")
+  GenerateMeminib()
+end
+
+#
+#  dataセクション初期化ブロックの生成
+#
+if !$OMIT_STANDARD_DATASECINIB && !$OMIT_IDATA
+  $kernelMemC.comment_header("Data Section Initialization Information")
+
+  datasecSize = $datasecList.size		# $datasecListの元のサイズを保存
+  if datasecSize > 0
+    OptimizeDatasecList()
+
+    # dataセクション初期化ブロックで使うシンボルのextern宣言
+    $datasecList.each do |key|
+      params = $memObj[key]
+      $kernelMemC.add("extern char __start_#{params[:SLABEL]}[];")
+      $kernelMemC.add("extern char __end_#{params[:SLABEL]}[];")
+      $kernelMemC.add("extern char __start_#{params[:ILABEL]}[];")
+    end
+    $kernelMemC.add
+
+    # dataセクションの数
+    numDatasec = $datasecList.size
+    $kernelMemC.add2("const uint_t _kernel_tnum_datasec = #{numDatasec}U;")
+
+    # dataセクション初期化ブロック
+    $kernelMemC.append("const DATASECINIB _kernel_datasecinib_table" \
+													"[#{datasecSize}] = ")
+    if numDatasec > 0
+      $kernelMemC.add("{")
+      $datasecList.each_with_index do |key, index|
+        $kernelMemC.add(",") if index > 0
+        params = $memObj[key]
+        $kernelMemC.append("\t{ __start_#{params[:SLABEL]}, " \
+								"__end_#{params[:SLABEL]}, " \
+								"__start_#{params[:ILABEL]} }")
+      end
+      $kernelMemC.add
+      $kernelMemC.add2("};")
+    else
+      $kernelMemC.add2("{{ 0, 0, 0 }};")
+    end
+  else
+    $kernelMemC.add2("const uint_t _kernel_tnum_datasec = 0U;")
+    $kernelMemC.add2("TOPPERS_EMPTY_LABEL(const DATASECINIB, " \
+											"_kernel_datasecinib_table);")
+  end
+end
+
+#
+#  bssセクション初期化ブロックの生成
+#
+if !$OMIT_STANDARD_BSSSECINIB
+  $kernelMemC.comment_header("BSS Section Initialization Information")
+
+  bsssecSize = $bsssecList.size			# $bsssecListの元のサイズを保存
+  if bsssecSize > 0
+    OptimizeBsssecList()
+
+    # bssセクション初期化ブロックで使うシンボルのextern宣言
+    $bsssecList.each do |key|
+      params = $memObj[key]
+      $kernelMemC.add("extern char __start_#{params[:SLABEL]}[];")
+      $kernelMemC.add("extern char __end_#{params[:SLABEL]}[];")
+    end
+    $kernelMemC.add
+
+    # bssセクションの数
+    numBsssec = $bsssecList.size
+    $kernelMemC.add2("const uint_t _kernel_tnum_bsssec = #{numBsssec}U;")
+
+    # bssセクション初期化ブロック
+    $kernelMemC.append("const BSSSECINIB _kernel_bsssecinib_table" \
+													"[#{bsssecSize}] = ")
+    if numBsssec > 0
+      $kernelMemC.add("{")
+      $bsssecList.each_with_index do |key, index|
+        $kernelMemC.add(",") if index > 0
+        params = $memObj[key]
+        $kernelMemC.append("\t{ __start_#{params[:SLABEL]}, " \
+								"__end_#{params[:SLABEL]} }")
+      end
+      $kernelMemC.add
+      $kernelMemC.add2("};")
+    else
+      $kernelMemC.add2("{{ 0, 0 }};")
+    end
+  else
+    $kernelMemC.add2("const uint_t _kernel_tnum_bsssec = 0U;")
+    $kernelMemC.add2("TOPPERS_EMPTY_LABEL(const BSSSECINIB, " \
+											"_kernel_bsssecinib_table);")
+  end
+end

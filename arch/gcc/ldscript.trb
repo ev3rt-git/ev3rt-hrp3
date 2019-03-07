@@ -1,0 +1,324 @@
+# -*- coding: utf-8 -*-
+#
+#   TOPPERS/HRP Kernel
+#       Toyohashi Open Platform for Embedded Real-Time Systems/
+#       High Reliable system Profile Kernel
+# 
+#   Copyright (C) 2016-2018 by Embedded and Real-Time Systems Laboratory
+#               Graduate School of Information Science, Nagoya Univ., JAPAN
+# 
+#   上記著作権者は，以下の(1)〜(4)の条件を満たす場合に限り，本ソフトウェ
+#   ア（本ソフトウェアを改変したものを含む．以下同じ）を使用・複製・改
+#   変・再配布（以下，利用と呼ぶ）することを無償で許諾する．
+#   (1) 本ソフトウェアをソースコードの形で利用する場合には，上記の著作
+#       権表示，この利用条件および下記の無保証規定が，そのままの形でソー
+#       スコード中に含まれていること．
+#   (2) 本ソフトウェアを，ライブラリ形式など，他のソフトウェア開発に使
+#       用できる形で再配布する場合には，再配布に伴うドキュメント（利用
+#       者マニュアルなど）に，上記の著作権表示，この利用条件および下記
+#       の無保証規定を掲載すること．
+#   (3) 本ソフトウェアを，機器に組み込むなど，他のソフトウェア開発に使
+#       用できない形で再配布する場合には，次のいずれかの条件を満たすこ
+#       と．
+#     (a) 再配布に伴うドキュメント（利用者マニュアルなど）に，上記の著
+#         作権表示，この利用条件および下記の無保証規定を掲載すること．
+#     (b) 再配布の形態を，別に定める方法によって，TOPPERSプロジェクトに
+#         報告すること．
+#   (4) 本ソフトウェアの利用により直接的または間接的に生じるいかなる損
+#       害からも，上記著作権者およびTOPPERSプロジェクトを免責すること．
+#       また，本ソフトウェアのユーザまたはエンドユーザからのいかなる理
+#       由に基づく請求からも，上記著作権者およびTOPPERSプロジェクトを
+#       免責すること．
+# 
+#   本ソフトウェアは，無保証で提供されているものである．上記著作権者お
+#   よびTOPPERSプロジェクトは，本ソフトウェアに関して，特定の使用目的
+#   に対する適合性も含めて，いかなる保証も行わない．また，本ソフトウェ
+#   アの利用により直接的または間接的に生じたいかなる損害に関しても，そ
+#   の責任を負わない．
+# 
+#   $Id: ldscript.trb 648 2019-01-14 05:26:19Z ertl-hiro $
+# 
+
+#
+#		リンカスクリプトの生成
+#
+
+#
+#  ラベルのプリフックス
+#
+$PREFIX_START = $asmLabel + "__start_"
+$PREFIX_END = $asmLabel + "__end_"
+$PREFIX_AEND = $asmLabel + "__aend_"
+
+#
+#  ターゲット依存のOUTPUT記述の生成
+#
+if defined? GenerateOutput()
+  GenerateOutput($ldscript)
+end
+
+#
+#  MEMORY記述の生成
+#
+$ldscript.add("MEMORY {")
+$cfgData[:ATT_REG].each do |_, params|
+  $ldscript.add("\t#{params[:regname]} : " \
+					"ORIGIN = 0x#{params[:base].val.to_s(16)}, " \
+					"LENGTH = 0x#{params[:size].val.to_s(16)}")
+end
+if defined? GenerateMemory()
+  GenerateMemory($ldscript)
+end
+$ldscript.add2("}")
+
+#
+#  ターゲット依存のPROVIDE記述の生成
+#
+if defined? GenerateProvide()
+  GenerateProvide($ldscript)
+end
+
+#
+#  リンク指定の生成
+#
+$ldscript.add("SECTIONS {")
+
+# ライブラリ中のどの関数をリンクするかを決定させるための記述の生成
+$ldscript.add("\t.discard (NOLOAD) : {")
+$ldscript.append("\t\t")
+$cfgData[:ATT_MOD].sort.each do |key, params|
+  # ライブラリは最後
+  case params[:modname]
+  when /^\-l/, /\.a$/
+    params[:order] = [ 1 ]
+  else
+    params[:order] = [ 0 ]
+  end
+  # 保護ドメイン順（無所属は最後）
+  if params[:domain] == $TDOM_NONE
+    params[:order].push($udomainList.size + 1)
+  else
+    params[:order].push(params[:domain])
+  end
+  # 元の順序を保存
+  params[:order].push(key)
+end
+$cfgData[:ATT_MOD].sort_by {|_, params| params[:order]}.each do |_, params|
+  if $modnameReplace.has_key?(params[:modname])
+    $ldscript.append($modnameReplace[params[:modname]])
+  else
+    $ldscript.append(params[:modname])
+  end
+  $ldscript.append("(.discard) ")
+end
+$ldscript.add()
+$ldscript.add2("\t}")
+
+# リンクするセクション記述の生成
+commonStdromRegionName = $cfgData[:ATT_REG][$commonMemreg[:stdrom]][:regname]
+$memObj.each do |key, params|
+  next unless params[:linker]
+  endLabelHook = false
+  regionName = $cfgData[:ATT_REG][params[:memreg]][:regname]
+
+  # セクションの開始記述の生成
+  if params[:SEC_TOP]
+    $ldscript.append("\t.#{params[:SLABEL]} ")
+    if params[:MEMREG_TOP]
+      $ldscript.append("0x#{$cfgData[:ATT_REG][params[:memreg]][:base]
+														.val.to_s(16)} ")
+    elsif params[:MP_TOP]
+      $ldscript.append("ALIGN(#{$TARGET_MP_ALIGN_STR}) ")
+    else
+      $ldscript.append("ALIGN(#{$TARGET_SEC_ALIGN_STR}) ")
+    end
+    if !params[:nowrite] && (params[:mematr] & $TA_MEMINI) == 0
+      $ldscript.append("(NOLOAD) ")
+    end
+    $ldscript.append(": ")
+    $ldscript.append("ALIGN(#{$TARGET_SEC_ALIGN_STR}) ")
+    $ldscript.add("{")
+  end
+
+  # ショートデータセクションの先頭の処理
+  if params[:SDATA_TOP]
+    if defined? GenerateGpLabel()
+      GenerateGpLabel($ldscript, key, params)
+    end
+  end
+
+  # 標準共有リード専用ライト領域全体の先頭ラベルの生成
+  if params[:SRPW_TOP]
+    $ldscript.add("\t\t#{$PREFIX_START}#{params[:SRPWLABEL]} = .;")
+  end
+
+  # メモリ保護単位の先頭ラベルの生成
+  if params[:MP_TOP]
+    if params[:PLABEL] != params[:MLABEL]
+      $ldscript.add("\t\t#{$PREFIX_START}#{params[:PLABEL]} = .;")
+    end
+  end
+
+  # メモリオブジェクトの先頭ラベルの生成
+  if params[:MO_TOP]
+    $ldscript.add("\t\t#{$PREFIX_START}#{params[:MLABEL]} = .;")
+  end
+
+  # セクションの先頭ラベルの生成
+  if params[:SEC_TOP]
+    if params[:SLABEL] != params[:MLABEL]
+      $ldscript.add("\t\t#{$PREFIX_START}#{params[:SLABEL]} = .;")
+    end
+    $ldscript.append("\t\t")
+  end
+
+  # リンクするファイル記述の生成
+  sectionDscr = SectionDescription(params[:secname])
+  case params[:type]
+  when :ATTMOD
+    if $modnameReplace.has_key?(params[:modname])
+      $ldscript.append($modnameReplace[params[:modname]])
+    else
+      $ldscript.append(params[:modname])
+    end
+    $ldscript.append("(#{sectionDscr}) ")
+  when :ATTSEC
+    $ldscript.append("*(#{sectionDscr}) ")
+  else
+    $ldscript.append("kernel_cfg.o(#{sectionDscr}) ")
+  end
+
+  # アラインした終了ラベルの番地
+  if params[:MP_LAST]
+    aend = "ALIGN(#{$TARGET_MP_ALIGN_STR})"
+  else
+    aend = "ALIGN(#{$TARGET_SEC_ALIGN_STR})"
+  end
+
+  # セクションの終了ラベルの生成
+  if params[:SEC_LAST]
+    $ldscript.add
+    if params[:SLABEL] == "rodata_shared"
+      # 無所属のリードオンリーデータセクションの場合
+      endLabelHook = true
+	  endLabels = ""
+    end
+    if params[:SLABEL] != params[:MLABEL]
+      if !endLabelHook
+        $ldscript.add("\t\t#{$PREFIX_END}#{params[:SLABEL]} = .;")
+      else
+        endLabels += "\t#{$PREFIX_END}#{params[:SLABEL]} = .;\n"
+      end
+    end
+  end
+
+  # メモリオブジェクトの終了ラベルの生成
+  if params[:MO_LAST]
+    if !endLabelHook
+      $ldscript.add("\t\t#{$PREFIX_END}#{params[:MLABEL]} = .;")
+      $ldscript.add("\t\t#{$PREFIX_AEND}#{params[:MLABEL]} = #{aend};")
+    else
+      endLabels += "\t#{$PREFIX_END}#{params[:MLABEL]} = .;\n"
+      endLabels += "\t#{$PREFIX_AEND}#{params[:MLABEL]} = #{aend};\n"
+    end
+  end
+
+  # メモリ保護単位の終了ラベルの生成
+  if params[:MP_LAST]
+    if params[:PLABEL] != params[:MLABEL]
+      if !endLabelHook
+        $ldscript.add("\t\t#{$PREFIX_AEND}#{params[:PLABEL]} = #{aend};")
+      else
+        endLabels += "\t#{$PREFIX_AEND}#{params[:PLABEL]} = #{aend};\n"
+      end
+    end
+  end
+
+  # 標準共有リード専用ライト領域全体の終了ラベルの生成
+  if params[:SRPW_LAST]
+    $ldscript.add("\t\t#{$PREFIX_AEND}#{params[:SRPWLABEL]} = #{aend};")
+  end
+
+  # セクションの終了記述の生成
+  if params[:SEC_LAST]
+    $ldscript.append("\t} > #{regionName}")
+    if params.has_key?(:ILABEL)
+      $ldscript.append(" AT > #{commonStdromRegionName}")
+    end
+    $ldscript.add
+    if params.has_key?(:ILABEL)
+      $ldscript.add("\t#{$PREFIX_START}#{params[:ILABEL]} = " \
+										"LOADADDR(.#{params[:SLABEL]});")
+    end
+    $ldscript.add
+  end
+
+  # 標準共有リードオンリー領域の最後の特殊処理
+  if endLabelHook
+    if defined? GenerateHookEndLabel()
+      GenerateHookEndLabel($ldscript, commonStdromRegionName)
+    end
+    $ldscript.add(endLabels)
+  end
+
+  # dataセクションの初期値を置くセクションをページ境界にアラインさせる
+  # ために，保護ドメイン共通の標準ROMリージョンの最後にアラインさせる
+  # ためのセクションを生成
+  if !$OMIT_IDATA && params[:MEMREG_LAST] \
+						&& params[:memreg] == $commonMemreg[:stdrom]
+    $ldscript.add("\t.#{regionName}_align (NOLOAD) : {")
+    $ldscript.add("\t\t. = ALIGN(#{$TARGET_MP_ALIGN_STR});")
+    $ldscript.add2("\t} > #{regionName}")
+  end
+end
+
+#
+#  リンカスクリプトの固定部分の生成
+#
+$ldscript.append(<<EOS)
+	/* Stabs debugging sections.  */
+	.stab          0 : { *(.stab) }
+	.stabstr       0 : { *(.stabstr) }
+	.stab.excl     0 : { *(.stab.excl) }
+	.stab.exclstr  0 : { *(.stab.exclstr) }
+	.stab.index    0 : { *(.stab.index) }
+	.stab.indexstr 0 : { *(.stab.indexstr) }
+	.comment       0 : { *(.comment) }
+	/* DWARF debug sections.
+	   Symbols in the DWARF debugging sections are relative to the beginning
+	   of the section so we begin them at 0.  */
+	/* DWARF 1 */
+	.debug          0 : { *(.debug) }
+	.line           0 : { *(.line) }
+	/* GNU DWARF 1 extensions */
+	.debug_srcinfo  0 : { *(.debug_srcinfo) }
+	.debug_sfnames  0 : { *(.debug_sfnames) }
+	/* DWARF 1.1 and DWARF 2 */
+	.debug_aranges  0 : { *(.debug_aranges) }
+	.debug_pubnames 0 : { *(.debug_pubnames) }
+	/* DWARF 2 */
+	.debug_info     0 : { *(.debug_info .gnu.linkonce.wi.*) }
+	.debug_abbrev   0 : { *(.debug_abbrev) }
+	.debug_line     0 : { *(.debug_line) }
+	.debug_frame    0 : { *(.debug_frame) }
+	.debug_str      0 : { *(.debug_str) }
+	.debug_loc      0 : { *(.debug_loc) }
+	.debug_macinfo  0 : { *(.debug_macinfo) }
+	/* SGI/MIPS DWARF 2 extensions */
+	.debug_weaknames 0 : { *(.debug_weaknames) }
+	.debug_funcnames 0 : { *(.debug_funcnames) }
+	.debug_typenames 0 : { *(.debug_typenames) }
+	.debug_varnames  0 : { *(.debug_varnames) }
+	/* DWARF 3 */
+	.debug_pubtypes 0 : { *(.debug_pubtypes) }
+	.debug_ranges   0 : { *(.debug_ranges) }
+	/* DWARF Extension.  */
+	.debug_macro    0 : { *(.debug_macro) }
+	.ARM.attributes 0 : { KEEP (*(.ARM.attributes)) KEEP (*(.gnu.attributes)) }
+	.note.gnu.arm.ident 0 : { KEEP (*(.note.gnu.arm.ident)) }
+
+	/DISCARD/ : {
+		*(.*)
+	}
+}
+EOS

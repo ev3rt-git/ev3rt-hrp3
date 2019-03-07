@@ -1,0 +1,1086 @@
+
+		TOPPERS/HRP3カーネル
+		ユーザーズマニュアル
+
+		対応バージョン: Release 3.1.0
+		最終更新: 2019年2月13日
+
+このドキュメントは，TOPPERS/HRP3カーネルを使用するために必要な事項を説
+明するものである．
+
+TOPPERS/HRP3カーネルは，TOPPERS/ASP3カーネル（以下，ASP3カーネル）を拡
+張する形で開発したものであり，その使用方法もASP3カーネルとほぼ同様であ
+る．現時点では，ASP3カーネルのユーザーズマニュアルと重複する事項につい
+てはこのマニュアルに記述していないため，このマニュアルを読む際には，
+ASP3カーネルのマニュアルもあわせて読むこと．
+
+このドキュメントでは，TOPPERS組込みコンポーネントシステム（TECS）をシス
+テムサービスの構築にのみ用い，アプリケーションプログラムはC言語により記
+述することを想定している．アプリケーションプログラムを含むシステム全体
+をTECSを用いて構築する方法については，以下のURLにあるTECSリファレンスマ
+ニュアルを参考にすること．
+
+	http://dev.toppers.jp/trac_user/tecs/wiki/WikiStart
+
+----------------------------------------------------------------------
+ TOPPERS/HRP Kernel
+     Toyohashi Open Platform for Embedded Real-Time Systems/
+     High Reliable system Profile Kernel
+
+ Copyright (C) 2016-2018 by Embedded and Real-Time Systems Laboratory
+             Graduate School of Information Science, Nagoya Univ., JAPAN
+ 
+ 上記著作権者は，以下の(1)〜(4)の条件を満たす場合に限り，本ソフトウェ
+ ア（本ソフトウェアを改変したものを含む．以下同じ）を使用・複製・改
+ 変・再配布（以下，利用と呼ぶ）することを無償で許諾する．
+ (1) 本ソフトウェアをソースコードの形で利用する場合には，上記の著作
+     権表示，この利用条件および下記の無保証規定が，そのままの形でソー
+     スコード中に含まれていること．
+ (2) 本ソフトウェアを，ライブラリ形式など，他のソフトウェア開発に使
+     用できる形で再配布する場合には，再配布に伴うドキュメント（利用
+     者マニュアルなど）に，上記の著作権表示，この利用条件および下記
+     の無保証規定を掲載すること．
+ (3) 本ソフトウェアを，機器に組み込むなど，他のソフトウェア開発に使
+     用できない形で再配布する場合には，次のいずれかの条件を満たすこ
+     と．
+   (a) 再配布に伴うドキュメント（利用者マニュアルなど）に，上記の著
+       作権表示，この利用条件および下記の無保証規定を掲載すること．
+   (b) 再配布の形態を，別に定める方法によって，TOPPERSプロジェクトに
+       報告すること．
+ (4) 本ソフトウェアの利用により直接的または間接的に生じるいかなる損
+     害からも，上記著作権者およびTOPPERSプロジェクトを免責すること．
+     また，本ソフトウェアのユーザまたはエンドユーザからのいかなる理
+     由に基づく請求からも，上記著作権者およびTOPPERSプロジェクトを
+     免責すること．
+ 
+ 本ソフトウェアは，無保証で提供されているものである．上記著作権者お
+ よびTOPPERSプロジェクトは，本ソフトウェアに関して，特定の使用目的
+ に対する適合性も含めて，いかなる保証も行わない．また，本ソフトウェ
+ アの利用により直接的または間接的に生じたいかなる損害に関しても，そ
+ の責任を負わない．
+ 
+ $Id: user.txt 669 2019-02-13 07:44:19Z ertl-hiro $
+----------------------------------------------------------------------
+
+○目次
+
+１．TOPPERS/HRP3カーネルの概要
+	1.1 TOPPERS/HRP3カーネルの位置付け
+	1.2 TOPPERS/HRP3カーネルの仕様
+２．ターゲット依存部
+３．クイックスタートガイド
+	3.1 開発環境の準備
+	3.2 手動メモリ配置
+	3.3 使用していないサービスコールの削除
+４．ディレクトリ構成・ファイル構成
+	4.1 配布パッケージのディレクトリ構成
+	4.2 ターゲット非依存部のファイル構成
+５．コンフィギュレーションスクリプトの使い方
+６．標準のMakefileの修正方法
+７．コンフィギュレータの使い方
+８．システムサービス
+９．サポートライブラリ
+	9.1 prb_str関数
+１０．テストプログラム
+	10.1 機能テストプログラム
+	10.2 タイマドライバシミュレータを用いたテストプログラム
+	10.3 性能評価プログラム
+１１．使用上の注意とヒント
+	11.1 メモリ配置結果の確認
+	11.2 ユーザスタック領域の保護
+	11.3 ターゲット依存部でのメモリマップの定義
+	11.4 拡張サービスコールの機能コード
+	11.5 タスク間でのスタック領域の共有
+	11.6 システムサービスの呼出し制限
+	11.7 カーネルからのシステムログ出力
+１２．参考情報
+１３．リファレンス
+	13.1 サービスコール一覧
+	13.2 静的API一覧
+	13.3 バージョン履歴
+
+
+１．TOPPERS/HRP3カーネルの概要
+
+1.1 TOPPERS/HRP3カーネルの位置付け
+
+TOPPERS/HRP3カーネル（以下，HRP3カーネル）は，TOPPERS/ASP3カーネルに対
+して，メモリ保護や時間パーティショニング機能などの保護機能を追加したリ
+アルタイムカーネルである．TOPPERS/HRPカーネルおよびHRP2カーネルに対して，
+拡張・改良を加えたものという位置付けもある．
+
+1.2 TOPPERS/HRP3カーネルの仕様
+
+HRP3カーネルの仕様は，ASP3カーネルに対して，次の機能を追加したものであ
+る．
+
+　・メモリ保護機能
+　・時間パーティショニング機能
+　・オブジェクトアクセス保護機能
+　・拡張サービスコール機能
+　・メッセージバッファ機能（ASP3カーネルでは拡張パッケージでサポート）
+
+HRP3カーネルを含むTOPPERS第3世代カーネル（ITRON系）の仕様の詳細について
+は，別途PDFファイルの形で配布している「TOPPERS第3世代カーネル（ITRON系）
+統合仕様書（Release 3.2.0）」を参照すること．
+
+カーネル仕様の中で，ターゲット定義事項については，ターゲット依存部ディ
+レクトリにあるターゲット依存部のユーザーズマニュアルを参照すること．
+
+
+２．ターゲット依存部
+
+HRP3カーネルのターゲット依存部の構成は，ASPカーネルと同様である．
+
+
+３．クイックスタートガイド
+
+HRP3カーネル上でサンプルプログラムを構築・動作させる手順は，ASP3カーネ
+ルとほぼ同様である．以下では，ASP3カーネルでの手順と異なる点についての
+み説明する．
+
+3.1 開発環境の準備
+
+TOPPERS組込みコンポーネントシステム（TECS）ジェネレータは，1.5.0以前の
+バージョンでは動作しないので注意すること．
+
+HRP3カーネルは，標準Cライブラリに含まれるメモリ操作関数（具体的には，
+memcpyとmemset）を使用している．また，コンパイラが標準Cライブラリ関数を
+呼び出すコードを生成する場合もある．そのため，ターゲットシステム用の標
+準Cライブラリが必要である．標準Cライブラリを用意する代わりに，必要な関
+数のみを自分で用意してもよい．
+
+3.2 手動メモリ配置
+
+HRP3カーネルは，デフォルトでは，自動メモリ配置を行う（ターゲット依存部
+が自動メモリ配置をサポートしていない場合もありうる）．自動メモリ配置を
+行う場合，サンプルプログラムを構築・動作させる手順は，ASP3カーネルと同
+様である．
+
+HRP3カーネルで，ターゲット依存部がサポートしている場合，手動メモリ配置
+を行うことも可能である．手動メモリ配置を行う場合，サンプルプログラムを
+構築・動作させる手順は，ASPカーネルでの手順と以下の違いがある．
+
+(1) Makefileのテンプレートの変更
+
+手動メモリ配置を行う場合には，手動メモリ配置用のMakefileのテンプレート
+（Makefile_mml）を用いる必要がある．具体的には，configure.rbの起動オプ
+ションに「-m ../sample/Makefile_mml」を付けて，Makefileのテンプレートを
+手動メモリ配置用のものに変更する．
+
+(2) メモリ配置の決定とリンカスクリプトの作成
+
+サンプルプログラムを実行するためのメモリ配置を決定する．具体的には，各
+保護ドメイン（カーネルドメイン，ユーザドメインDOM1，ユーザドメインDOM2）
+と無所属の各セクションを配置する番地を決定する．また，各セクションを，
+決定した番地に配置するリンカスクリプト（標準のファイル名は，
+ldscript.ld）を作成する．
+
+(3) dataセクションとbssセクションの初期化処理の作成
+
+サンプルプログラムのdataセクションとbssセクションの初期化を行うためのデー
+タ構造または関数を作成する．これらのセクションの初期化に，HRP3カーネル
+内で用意している関数を用いる場合には，以下のデータ構造を用意する．
+
+	const uint_t _kernel_tnum_datasec
+	const DATASECINIB _kernel_datasecinib_table[]
+	const uint_t _kernel_tnum_bsssec
+	const BSSSECINIB _kernel_bsssecinib_table[]
+
+これらのデータ構造を用意する代わりに，OMIT_INITIALIZE_SECTIONSをマクロ
+定義してカーネルをコンパイルし，これらのセクションの初期化を行う
+initialize_sectionsを自分で用意してもよい（または，サンプルプログラム
+を，dataセクションとbssセクションの初期化に依存しないように修正する方
+法もある）．
+
+3.3 使用していないサービスコールの削除
+
+HRP3カーネルのデフォルト設定では，サービスコールを使用しているか否かに
+かかわらず，すべてのサービスコールの処理コードをリンクする．使用してい
+ないサービスコールの処理コードをリンクしないようにするには，オブジェク
+トファイルを置くディレクトリに作られるomit_svc.hに，そのための記述を含
+める必要がある．具体的には，例えばsus_tskとrsm_tskの処理コードをリンク
+しないようにするには，omit_svc.hに以下の記述を含める．
+
+#define _kernel_sus_tsk no_support
+#define _kernel_rsm_tsk no_support
+
+これに加えて，使用しない処理コードを関数単位でリンクしないようにするた
+めには，カーネルを関数単位でライブラリ化することが必要である．その方法
+については，ASP3カーネルのユーザーズマニュアルの「3.4 カーネルを関数単
+位でライブラリ化する方法」の節を参照すること．
+
+
+４．ディレクトリ構成・ファイル構成
+
+4.1 配布パッケージのディレクトリ構成
+
+	doc/			ドキュメント
+	include/		アプリケーション向けヘッダファイル
+	kernel/			カーネルのソースファイル
+	tecs_kernel/	TECSからカーネルを呼び出すためのソースファイル
+	syssvc/			システムサービスのヘッダファイル，ソースファイル
+	library/		サポートライブラリのソースファイル
+	target/			ターゲット依存部
+	arch/			ターゲット依存部の共通部分
+		gcc/		GCC開発環境依存部
+		tracelog/	トレースログ記録のサンプルコード
+	cfg/			コンフィギュレータ
+		doc/		コンフィギュレータのドキュメント
+	utils/			ユーティリティプログラム
+	sample/			サンプルプログラムとMakefile
+	test/			テストプログラム
+	extension/		拡張パッケージ
+
+4.2 ターゲット非依存部のファイル構成
+
+ターゲット非依存部（テストプログラムと拡張パッケージは除く）の各ファイ
+ルの概要は次の通り．
+
+	README.txt			TOPPERS/HRP3カーネルの簡単な紹介
+	configure.rb		コンフィギュレーションスクリプト（GNU開発環境用）
+	MANIFEST			個別パッケージのファイルリスト
+
+  doc/
+	user.txt			ユーザーズマニュアル
+	porting.txt			ターゲット依存部 ポーティングガイド
+	hrp3_design_log.txt	設計メモ
+	version.txt			変更履歴
+
+  include/
+	kernel.h		HRP3カーネルを使用するための定義
+	kernel_fncode.h	サービスコールの機能コードの定義
+	svc_call.h		サービスコール呼出しのための定義
+	sil.h			システムインタフェースレイヤを使用するための定義
+	t_stddef.h		TOPPERS共通ヘッダファイル
+	itron.h			ITRON仕様共通規定のデータ型・定数・マクロ
+	extsvc_fncode.h	拡張サービスコールの機能コードの定義
+	t_syslog.h		システムログ出力を行うための定義
+	t_stdlib.h		基本的なライブラリ関数を使用するための定義
+	queue.h			キュー操作ライブラリを使用するための定義
+	log_output.h	システムログのフォーマット出力を使用するための定義
+
+  kernel/
+	Makefile.kernel		カーネルのファイル構成の定義
+	svc.def				サービスコール定義ファイル
+	kernel_impl.h		カーネル実装用標準ヘッダファイル
+	kernel_int.h		kernel_cfg.c用のヘッダファイル
+	kernel_rename.def	カーネルの内部識別名のリネーム定義
+	kernel_rename.h		カーネルの内部識別名のリネーム
+	kernel_unrename.h	カーネルの内部識別名のリネーム解除	
+	kernel_api.def		コンフィギュレータの静的APIテーブル
+	kernel_api_mml.def	コンフィギュレータの静的APIテーブル（手動メモリ配置）
+	kernel_sym.def		コンフィギュレータの値取得シンボルテーブル
+	kernel.trb			コンフィギュレータのパス2の生成スクリプト
+	kernel_opt.trb		コンフィギュレータのパス3の生成スクリプト
+	kernel_mem.trb		コンフィギュレータのパス4の生成スクリプト
+	kernel_check.trb	コンフィギュレータのチェックパスの生成スクリプト
+	kernel_lib.trb		生成スクリプト用ライブラリ関数
+	genoffset.trb		オフセットファイル生成用の生成スクリプト
+	allfunc.h			すべての関数をコンパイルするための定義
+	check.h				エラーチェック用マクロ
+	startup.c			カーネルの初期化と終了処理
+	domain.h			保護ドメイン管理モジュール関連の定義
+	domain.c			保護ドメイン管理モジュール
+	domain.trb			保護ドメイン管理モジュールの生成スクリプト
+	domain_prep.trb		保護ドメインに関する前処理
+	task.h				タスク管理モジュール関連の定義
+	task.c				タスク管理モジュール
+	task.trb			タスク管理モジュールの生成スクリプト
+	taskhook.h			タスク管理に関連するフックルーチン関連の定義
+	taskhook.c			タスク管理に関連するフックルーチン
+	wait.h				待ち状態管理モジュール関連の定義
+	wait.c				待ち状態管理モジュール
+	time_event.h		タイムイベント管理モジュール関連の定義
+	time_event.c		タイムイベント管理
+	memory.h			メモリオブジェクト管理モジュール関連の定義
+	memory.c			メモリオブジェクト管理モジュール
+	memory.trb			メモリオブジェクト管理モジュールの生成スクリプト
+	memory_prep.trb		メモリオブジェクトに関する前処理
+	svc_table.c			サービスコール処理ルーチンのテーブル
+	task_manage.c		タスク管理機能
+	task_refer.c		タスクの状態参照機能
+	task_sync.c			タスク付属同期機能
+	task_term.c			タスク終了機能
+	semaphore.h			セマフォ機能関連の定義
+	semaphore.c			セマフォ機能
+	semaphore.trb		セマフォ機能の生成スクリプト
+	eventflag.h			イベントフラグ機能関連の定義
+	eventflag.c			イベントフラグ機能
+	eventflag.trb		イベントフラグ機能の生成スクリプト
+	dataqueue.h			データキュー機能関連の定義
+	dataqueue.c			データキュー機能
+	dataqueue.trb		データキュー機能の生成スクリプト
+	pridataq.h			優先度データキュー機能関連の定義
+	pridataq.c			優先度データキュー機能
+	pridataq.trb		優先度データキュー機能の生成スクリプト
+	mutex.h				ミューテックス機能関連の定義
+	mutex.c				ミューテックス機能
+	mutex.trb			ミューテックス機能の生成スクリプト
+	messagebuf.h		メッセージバッファ機能関連の定義
+	messagebuf.c		メッセージバッファ機能
+	messagebuf.trb		メッセージバッファ機能の生成スクリプト
+	mempfix.h			固定長メモリプール機能関連の定義
+	mempfix.c			固定長メモリプール機能
+	mempfix.trb			固定長メモリプール機能の生成スクリプト
+	time_manage.c		システム時刻管理機能
+	cyclic.h			周期通知機能関連の定義
+	cyclic.c			周期通知機能
+	cyclic.trb			周期通知機能の生成スクリプト
+	alarm.h				アラーム通知機能関連の定義
+	alarm.c				アラーム通知機能
+	alarm.trb			アラーム通知機能の生成スクリプト
+	sys_manage.c		システム状態管理機能
+	mem_manage.c		メモリオブジェクト管理機能
+	interrupt.h			割込み管理機能関連の定義
+	interrupt.c			割込み管理機能
+	interrupt.trb		割込み管理機能の生成スクリプト
+	exception.h			CPU例外管理機能関連の定義
+	exception.c			CPU例外管理機能
+	exception.trb		CPU例外管理機能の生成スクリプト
+	svc_manage.h		拡張サービスコール管理機能関連の定義
+	svc_manage.trb		拡張サービスコール管理機能の生成スクリプト
+
+  tecs_kernel/
+	kernel.cdl						カーネルオブジェクトのコンポーネント
+									記述ファイル
+	tecs_kernel.h					カーネルオブジェクトのコンポーネント
+									化のためのヘッダファイル
+	init_tecs.c						TECSの初期化処理
+	tKernel_inline.h				カーネル操作のインライン関数
+	tTask.c							タスク操作
+	tTask_inline.h					タスク操作のインライン関数
+	tSemaphore_inline.h				セマフォ操作のインライン関数
+	tEventflag_inline.h				イベントフラグ操作のインライン関数
+	tDataqueue_inline.h				データキュー操作のインライン関数
+	tPriorityDataqueue_inline.h		優先度データキュー操作のインライン関数
+	tMutex_inline.h					ミューテックス操作のインライン関数
+	tMessageBuffer_inline.h			メッセージバッファ操作のインライン関数
+	tFixedSizeMemoryPool_inline.h	固定長メモリプール操作のインライン関数
+	tCyclicNotifier.c				周期通知操作
+	tCyclicNotifier_inline.h		周期通知操作のインライン関数
+	tAlarmNotifier.c				アラーム通知操作
+	tAlarmNotifier_inline.h			アラーム通知操作のインライン関数
+	tInterruptRequest_inline.h		割込み要求ライン操作のインライン関数
+	tISR.c							割込みサービスルーチン操作
+	tInitializeRoutine.c			初期化ルーチン操作
+	tTerminateRoutine.c				終了処理ルーチン操作
+
+  syssvc/
+	syslog.h				システムログ機能を使用するための定義
+	tSysLog.cdl				システムログ機能のコンポーネント記述ファイル
+	tSysLog.c				システムログ機能
+	tSysLogAdapter.cdl		システムログ機能のアダプタのコンポーネント記
+							述ファイル
+	tSysLogAdapter.c		システムログ機能のアダプタ
+	serial.h				シリアルインタフェースドライバを使用するため
+							の定義
+	tSerialPort.cdl			シリアルインタフェースドライバのコンポーネン
+							ト記述ファイル
+	tSerialPortMain.c		シリアルインタフェースドライバの本体
+	tSerialAdapter.cdl		シリアルインタフェースドライバのアダプタのコ
+							ンポーネント記述ファイル
+	tSerialAdapter.c		シリアルインタフェースドライバのアダプタ
+	tLogTask.cdl			システムログタスクのコンポーネント記述ファイル
+	tLogTaskMain.c			システムログタスクの本体
+	test_svc.h				テストプログラム用サービスを使用するための定義
+	tTestService.cdl		テストプログラム用サービスのコンポーネント記
+							述ファイル
+	tTestService.c			テストプログラム用サービス
+	tTestServiceAdapter.cdl	テストプログラム用サービスのアダプタのコンポー
+							ネント記述ファイル
+	tTestServiceAdapter.c	テストプログラム用サービスのアダプタ
+	histogram.h				実行時間分布集計サービスを使用するための定義
+	tHistogram.cdl			実行時間分布集計サービスのコンポーネント記述
+							ファイル
+	tHistogram.h			実行時間分布集計サービスのヘッダファイル
+	tHistogram.c			実行時間分布集計サービス
+	tHistogramAdapter.cdl	実行時間分布集計サービスのアダプタのコンポー
+							ネント記述ファイル
+	tHistogramAdapter.c		実行時間分布集計サービスのアダプタ
+	tBanner.cdl				カーネル起動メッセージ出力のコンポーネント記
+							述ファイル
+	tBannerMain.c			カーネル起動メッセージ出力の本体
+
+  library/
+	log_output.c		システムログのフォーマット出力
+	prb_str.c			文字列に対するアクセス権のチェック
+	strerror.c			エラーメッセージ文字列を返す関数
+	t_perror.c			エラーメッセージの出力
+	vasyslog.c			可変数引数のシステムログライブラリ
+
+  arch/gcc/
+	tool_stddef.h		t_stddef.hの開発環境依存部（GCC用）
+	tool_svc.h			ソフトウェア割込みによるサービスコール呼出しの
+						開発環境依存部（GCC用）
+	ldscript.trb		リンカスクリプトの生成スクリプト（GCC用）
+
+  arch/tracelog/
+	trace_log.h			トレースログに関する設定
+	tTraceLog.cdl		トレースログ機能のコンポーネント記述ファイル
+	tTraceLog.c			トレースログ機能
+
+  cfg/
+	MANIFEST			個別パッケージのファイルリスト
+	cfg.rb				コンフィギュレータ本体
+	pass1.rb			コンフィギュレータのパス1の処理
+	pass2.rb			コンフィギュレータのパス2の処理
+	GenFile.rb			GenFileクラスの定義
+	SRecord.rb			SRecordクラスの定義
+
+  cfg/doc/
+	cfg_user.txt		コンフィギュレータ ユーザーズマニュアル
+
+  utils/
+	applyrename.rb		ファイルにリネームを適用
+	genrename.rb		リネームヘッダファイルの生成
+	gensvc.rb			サービスコールインタフェースの生成
+	gentest.rb			テストプログラムの生成
+	makerelease.rb		配布パッケージの生成
+
+  sample/
+	Makefile			標準のMakefile（GNU開発環境用）のテンプレート
+	Makefile_mml		手動メモリ配置用のMakefileのテンプレート
+	sample1.h			サンプルプログラム(1)に関する定義
+	sample1.c			サンプルプログラム(1)
+	sample1.cfg			サンプルプログラム(1)のコンフィギュレーションファイル
+	sample1.cdl			サンプルプログラム(1)のコンポーネント記述ファイル
+	tSample2.h			サンプルプログラム(2)に関する定義
+	tSample2.c			サンプルプログラム(2)
+	tSample2.cfg		サンプルプログラム(2)のコンフィギュレーションファイル
+	tSample2.cdl		サンプルプログラム(2)のコンポーネント記述ファイル
+
+
+５．コンフィギュレーションスクリプトの使い方
+
+HRP3カーネルのコンフィギュレーションスクリプト（configure.rb）は，ASP3
+カーネルと同一のものである．
+
+
+６．Makefileの修正方法
+
+HRP3カーネルでのMakefileの修正方法は，ASP3カーネルとほぼ同様である．以
+下では，ASP3カーネルでの方法と異なる点についてのみ説明する．
+
+6.1 Makefileの変数定義
+
+HRP3カーネルの標準のMakefileでは，システムサービスはカーネルドメインに
+属する処理単位で実行されることを仮定し，システムサービスのコンパイルオ
+プション（SYSSVC_CFLAGS）にTOPPERS_SVC_CALLをマクロ定義するオプション
+を追加している．
+
+6.2 コンパイルオプション
+
+手動メモリ配置を用いる場合には，TOPPERS_ML_MANUALをマクロ定義する．手
+動メモリ配置用のMakefileのテンプレート（Makefile_mml）では，コンパイル
+オプションでこのマクロ定義を行っている．
+
+dataセクションの初期化が必要ない場合には，OMIT_IDATAをマクロ定義するこ
+とで，dataセクションの初期化処理を省くことができる．dataセクションの初
+期化が必要ない場合として，次の2つが考えられる．
+
+・プログラム（データ領域を含む）をストレージ等からメモリにロードする場
+  合．このような場合には，標準ROMリージョンを標準RAMリージョンを同じメ
+  モリリージョンに設定しするのが素直であり，その場合には，OMIT_IDATAを
+  マクロ定義してdataセクションの初期化を外すこととする．
+
+  ただし，dataセクションはプログラムを実行すると書き換わるため，dataセ
+  クションの初期化を外した場合には，プログラムをロードした後に，複数回
+  実行することはできない（逆に言うと，実行の度にロードしなければならな
+  い）．1回のロードで複数回実行できるようにするには，メモリをROMとみな
+  すリージョンとRAMとみなすリージョンに分け，標準ROMリージョンと標準
+  RAMリージョンを別のメモリリージョンとして，dataセクションの初期化を
+  行う（OMIT_IDATAをマクロ定義しない）方法がある．
+
+・アプリケーションがdataセクションの初期化に依存しないように作られてい
+  る場合．より具体的には，静的変数を（0以外に）初期化する機能を使用し
+  ていない場合．
+
+OMIT_CHECK_USTACK_OVERLAPをマクロ定義してコンパイルすることで，複数の
+タスクがユーザスタック領域を共有することを可能にする．詳しくは，「11.5
+タスク間でのスタック領域の共有」の節を参照すること．
+
+HRP3カーネルでは，標準Cライブラリを使用しており，コンパイルオプション
+に-DTOPPERS_USE_STDLIBを指定しても意味はない．
+
+
+７．コンフィギュレータの使い方
+
+コンフィギュレータ（cfg）による処理は，「TOPPERS第3世代カーネル（ITRON
+系）統合仕様書」の「2.12.5 コンフィギュレータの処理モデル」の節の記述の
+通り，自動メモリ配置の場合は4つのパス，手動メモリ配置の場合は3つのパス
+で構成される（ASP3カーネルでは3つのパスで構成される）．
+
+コンフィギュレータは，ASP3カーネルと同一のものを用いており，HRP3カーネ
+ルでのコンフィギュレータの使い方は，ASP3カーネルとほぼ同様である．以下
+では，ASP3カーネルでの使い方と異なる点についてのみ説明する．
+
+7.1 コンフィギュレータの起動
+
+コンフィギュレータのオプションで，HRP3カーネルにおいて，ASP3カーネルと
+異なる使い方をするものは以下の通り．
+
+	-k［--kernel］<カーネル名>
+		カーネルの名称を指定する．HRP3カーネルでは，hrpを指定する．
+
+	-p［--pass］<パス番号>
+		パス番号を指定する．1〜4のいずれか．
+
+	-r［--rom-image］<ロードモジュールのSレコードファイル名>
+		ロードモジュールをSレコードフォーマットの形に変換したファイルの
+		名称を指定する．パス2以降で有効．
+
+	-s [--rom-symbol] <ロードモジュールのシンボルファイル名>
+		ロードモジュール中の各シンボルとアドレスの対応表を含むシンボル
+		ファイルの名称を指定する．パス2以降で有効．
+
+	--id-input-file <ID番号入力ファイル名>
+		オブジェクトのID番号の割付けを，指定した名前のファイルから取り
+		込む．パス1とパス2で有効．パス1ではドメインのID番号，パス2では
+		その他のオブジェクトのID番号を用いる．
+
+
+８．システムサービス
+
+HRP3カーネルの配布パッケージには，以下のシステムサービスが含まれている．
+
+  ・システムログ機能
+  ・シリアルインタフェースドライバ
+	  - ターゲット非依存部
+	  - ターゲット依存部
+  ・システムログタスク
+  ・低レベル出力（ターゲット依存部のみ）
+  ・テストプログラム用サービス
+  ・実行時間分布集計サービス
+  ・カーネル起動メッセージ出力
+
+これらのシステムサービスは，TOPPERS組込みコンポーネントシステム（TECS）
+を用いて実装しており，ASP3カーネルのシステムサービスをほぼそのまま用い
+ている．
+
+
+９．サポートライブラリ
+
+HRP3カーネルでは，ASP3カーネルと同様，次の3つのサポートライブラリを用
+意している．
+
+　・基本的なライブラリ関数
+　・キュー操作ライブラリ関数
+　・システムログ出力用ライブラリ関数
+
+これらのライブラリの機能と使用方法は，ASP3カーネルと同じである．
+
+以下では，その他のサポートライブラリについてのみ説明する．
+
+9.1 prb_str関数
+
+拡張サービスコールにおいて，ユーザタスクから渡された文字列が，そのタス
+クからアクセスできるものであるかをチェックするために，prb_str関数を用
+意している．prb_str関数を用いる場合には，t_stdlib.hをインクルードし，
+prb_str.cをコンパイル・リンクする．TECSは，prb_str関数を使用する．
+
+(1) ER prb_str(const char *str, size_t maxlen, ID tskid, MODE pmmode)
+
+tskidで指定したタスクから，strから始まる文字列に対して，pmmodeで指定し
+た種別のアクセスが許可されているかをチェックする．アクセスが許可されて
+いる場合にE_OK，そうでない場合にE_MACVが返る．maxlenには，文字列の最大
+長を渡す（最大長がわからない場合には，SIZE_MAXを渡しても良い）．pmmode
+に指定できる値は，prb_memサービスコールと同じである．E_OKとE_MACV以外
+に，prb_memサービスコールと同様のエラーが返る場合がある．
+
+なお，この関数は，カーネルドメインから呼び出すことを想定している．
+
+
+１０．テストプログラム
+
+HRP3カーネルでは，ASP3カーネルと同様のテストプログラム（メッセージバッ
+ファ拡張パッケージのテストプログラムを含む）を，カーネルドメインで実行
+するものとして用意しているのに加えて，HRP3カーネルで追加した機能のテス
+トプログラムを用意している．テストプログラムの実行方法は，ASP3カーネル
+と同様である．
+
+以下では，HRP3カーネルで追加したテストプログラムについてのみ説明する．
+
+10.1 機能テストプログラム
+
+HRP3カーネルで追加した機能テストプログラムは次の通り．
+
+(1) test_calsvc				サービスコール呼出しに関するテスト
+(2) test_extsvc1			拡張サービスコールに関するテスト(1)
+(3) test_lmtdom1			保護ドメインに対する制限に関するテスト(1)
+(4) test_lmtdom2			保護ドメインに対する制限に関するテスト(2)
+(5) test_sysstat2			システム状態に関するテスト(2)
+(6) test_mprot1				メモリ保護機能のテスト(1)
+(7) test_mprot2				メモリ保護機能のテスト(2)
+(8) test_sched1				ドメイン間のスケジューリングに関するテスト(1)
+(9) test_tprot1				時間パーティショニングに関するテスト(1)
+(10) test_tprot2			時間パーティショニングに関するテスト(2)
+(11) test_tprot3			時間パーティショニングに関するテスト(3)
+(12) test_tprot4			時間パーティショニングに関するテスト(4)
+(13) test_tprot5			時間パーティショニングに関するテスト(5)
+(14) test_twdnfy			タイムウィンドウ通知に関するテスト
+(15) test_prbstr			prb_strのテスト
+
+10.2 タイマドライバシミュレータを用いたテストプログラム
+
+HRP3カーネルで追加したタイマドライバシミュレータを用いたテストプログラ
+ムは次の通り．
+
+(1) simt_twd1				タイムウィンドウ管理機能のテスト(1)
+
+simt_twd1は-DHRT_CONFIG1をつけ，-DHOOK_HRT_EVENTはつけずにコンパイルす
+ること．
+
+10.3 性能評価プログラム
+
+HRP3カーネルで追加した性能評価プログラムは次の通り．
+
+(1) perf0u		時間計測のオーバヘッドの評価
+(2) perf1u		slp_tsk，wup_tskによるタスク切換え時間の評価
+
+perf0uとperf1uは，それぞれperf0とperf1と同じ性能評価を，ユーザドメイン
+のタスクで実施するものである．そのため，ソースファイルはperf0／perf1と
+同じものを使用し，システムコンフィギュレーションファイルのみを提供して
+いる．構築する場合には，-Aオプションでperf0／perf1を指定し，-cオプショ
+ンでperf0u.cfg／perf1u.cfgを指定する．具体的には，perf0uを構築する場合
+には，次のコマンドを実行すればよい（構築用のディレクトリが，HRP3カーネ
+ルのソースファイルを展開したディレクトリの直下にあると仮定している）．
+
+	% ruby ../configure.rb -T <ターゲット略称> -a ../test \
+						-A perf0 -c perf1u.cfg -C perf_pf.cdl
+
+
+１１．使用上の注意とヒント
+
+ASP3カーネルに対する使用上の注意とヒントは，HRP3カーネルにも適用できる．
+
+以下では，ASP3カーネルとは異なる点についてのみ説明する．
+
+11.1 メモリ配置結果の確認
+
+自動メモリ配置は，ユーザの誤設定，コンフィギュレータの不具合に加えて，
+リンカの想定しない振舞いによっても，期待した通りのメモリ配置およびメモ
+リ保護設定にならない場合がある．自動メモリ配置を用いる場合には，メモリ
+配置結果が期待した通りになっているかを確認することを推奨する．
+
+以下では，意図しないメモリ配置に関して，カーネルで何らかの対応をしてい
+る点について説明する．
+
+(1) カーネルに登録していないオブジェクトモジュール
+
+リンカに対してコマンドラインでリンクすべきと指定したオブジェクトモジュー
+ルで，標準のセクション（正確には，ATT_SECで登録していないセクション）
+を含んでいるものは，ATT_MODでカーネルに登録しなければならない．登録し
+落としているオブジェクトモジュールがあった場合，リンカがエラーを報告す
+ることが望ましいが，GNU開発環境のリンカは，下に述べる対策をしない場合，
+エラーを検出せず，それらのセクションを意図しない場所に配置する．
+
+GNU開発環境のリンカ向けのリンカスクリプトには，登録し落としているオブ
+ジェクトモジュールが確実に検出できるように，ATT_MODでカーネルに登録さ
+れていないオブジェクトモジュールの標準のセクションを捨てる記述を含めて
+いる．リンカが以下のようなエラーが出した場合には，登録し落としているオ
+ブジェクトモジュールがあることを意味している．
+
+	'……' referenced in section ……: defined in discarded section ……
+
+(2) 想定していない隙間やセクション
+
+コンパイラおよびリンカによって，想定していない隙間やセクションが生成さ
+れる場合がある．セクションが生成されている場合には，その配置に注意が必
+要である．
+
+コンフィギュレータが以下の警告メッセージを出した場合には，<ラベル1>と
+<ラベル2>の間に，コンフィギュレータが想定していない隙間またはセクショ
+ンがあることを意味している．
+
+	warning: unexpected gap between <ラベル1> and <ラベル2>.
+
+何も配置されていない隙間は，他のエラーを引き起こしていない限りは無害で
+あるが，以下のエラーを引き起こす場合には，TargetCalcMeminibSize関数を
+用いてメモリオブジェクト初期化ブロックのサイズを大きくして回避する必要
+がある．
+
+	E_SYS: illegal memory object initialization block size
+
+11.2 ユーザスタック領域の保護
+
+「TOPPERS第3世代カーネル（ITRON系）統合仕様書」では，タスクのユーザス
+タック領域に対しては，そのタスクのみが書込み／読出しアクセスを行えるこ
+ととするのを基本にしつつ，それを実現するために大きいオーバヘッドを生じ
+る場合には，ターゲット定義で，そのタスクが属する保護ドメイン全体からア
+クセスできるものとしても良いことにしている．
+
+タスクのユーザスタック領域をそのタスクが属する保護ドメイン全体からアク
+セスできるものとした場合には，ユーザスタックのオーバフローを確実に検出
+するために，ユーザスタック領域をスタックの進行方向にはみ出した番地には，
+そのタスクがアクセスできないメモリ領域を配置する．これを，レッドゾーン
+方式と呼ぶ．
+
+なお，そのタスクのみがアクセスできるという仕様を実現するためのオーバヘッ
+ドは，一般に，メモリ保護ユニット（MPU）を持つターゲットシステムでは小
+さいのに対して，メモリ管理ユニット（MMU）を持つターゲットシステムでは
+大きくなる．
+
+11.3 ターゲット依存部でのメモリマップの定義
+
+ターゲットシステムのメモリマップの定義が，ターゲット依存部に
+target_mem.cfgという名称で用意されており，カーネル実装のコンフィギュレー
+ションファイル（target_kernel.cfg）からインクルードされている場合がある．
+標準のMakefileでは，target_kernel.cfgをコンフィギュレータのパス1に読み
+込ませているため，このメモリマップの定義が有効になっている．
+
+これが邪魔になる場合には，target_kernel.cfgからtarget_mem.cfgをインクルー
+ドするのをやめ，独自にメモリマップを定義するとよい．または，
+target_mem.cfgを変更する手もある．
+
+手動メモリ配置の場合には，独自にメモリマップを定義する必要があるため，
+target_mem.cfgの主要部分は除外するようになっている．
+
+11.4 拡張サービスコールの機能コード
+
+TECSにおいて，ユーザドメインの属するタスクから，カーネルドメインのセル
+を呼び出すと，TECSジェネレータは，拡張サービスコールを生成する．TECSジェ
+ネレータは，生成する拡張サービスコールの機能コードに，TFN_TECSGEN_ORIN
+から始まる値を使用する．この値のデフォルト値は1であり，
+include/extsvc_fncode.hで定義されている．
+
+部分的にはTECSを使しつつ，一部の拡張サービスコールを（TECSを使わずに）
+定義する場合には，TECSを使わずに定義する拡張サービスコールの機能番号を
+1から順に割り当て，TFN_TECSGEN_ORINを割り当てた最後の機能番号＋1にマク
+ロ定義する必要がある．
+
+11.5 タスク間でのスタック領域の共有
+
+ASP3カーネルでは，CRE_TSKに対してスタック領域の先頭番地とサイズが渡され
+た場合に，その領域が他の領域と重なっていないかのチェックを行っていなかっ
+たため，同時に起動されることがないとわかっている複数のタスク間で，スタッ
+ク領域を共有させることが可能であった．
+
+それに対してHRP3カーネルでは，ユーザタスクのユーザスタック領域に関して，
+他のメモリオブジェクトと重なっていないかチェックし，重なっていた場合に
+はエラーとしている．そのため，同時に起動されることがないとわかっている
+複数のユーザタスク間で，ユーザスタック領域を共有させることができない．
+
+これを可能にするために，タスクのユーザスタック領域の共有を許すオプショ
+ンを用意している．具体的には，OMIT_CHECK_USTACK_OVERLAPをマクロ定義して
+コンパイルすることで，タスクのユーザスタック領域が，同じ保護ドメインに
+属する他のタスクのユーザスタック領域と一致（先頭番地とサイズがともに一
+致）している場合を許容する．この場合，ユーザスタック領域を共有するタス
+クが同時に起動されないことを保証するのは，ユーザの責任である．
+
+11.6 システムサービスの呼出し制限
+
+HRP3カーネルの配布パッケージに含まれるシステムサービスは，カーネルドメ
+インで実行することを想定して実装している．そのため，ユーザドメインに属
+するタスクからシステムサービスを呼び出す場合には，拡張サービスコールを
+用いることになる．
+
+ユーザドメインに属するタスクの誤動作が，拡張サービスコールを経由して，
+他の保護ドメインに悪影響を及ぼさないようにするためには，一般に，拡張サー
+ビスコールにおいて，それを呼び出せる保護ドメイン（または処理単位）を制
+限することが必要である．どのような制限を行うべきかはアプリケーションに
+依存するため，HRP3カーネルの配布パッケージに含まれるシステムサービスで
+は，このような制限を行っていない．
+
+そのため，ユーザドメインに属するタスクの誤動作が，システムサービスを経
+由して，他の保護ドメインに悪影響を及ぼす可能性がある．例えば，ユーザド
+メインに属するタスクから，他のタスクが使用しているシリアルポートにアク
+セスし，正常な通信を阻害することができる．また，システムログ機能に対し
+て低レベル出力を行わせることで，システムのリアルタイム性を損なわせるこ
+とができる．
+
+このような事態を避けたい場合には，各拡張サービスコールに，それを呼び出
+せる保護ドメイン（または処理単位）を制限する処理を追加する必要がある．
+
+11.7 カーネルからのシステムログ出力
+
+カーネルからシステムログに出力されるメッセージと，出力される状況は以下
+の通りである．
+
+(1) no time event is processed in hrt interrupt.
+
+高分解能タイマ割込みが発生したが，処理すべきタイムイベントがなかった場
+合に，このメッセージが出力される．このメッセージが出力される状況につい
+ては，ASP3カーネルのユーザーズマニュアルの「11.9 カーネルからのシステ
+ムログ出力」の節を参照すること．
+
+(2) spurious twd interrput (p_runtwd = XXXX, left_twdtim = YYYY)
+
+タイムウィンドウタイマ割込みが発生したが，タイムウィンドウ切換えが必要
+なかった場合に，このメッセージが出力される．
+
+
+１２．参考情報
+
+ASP3カーネルに対する参考情報は，HRP3カーネルにも適用できる．
+
+HRP3カーネルの開発支援のためのTRAC（バグトラッキングシステム）のURLは以
+下の通りである（TRACへのアクセスには，会員パスワードが必要である）．
+
+	http://dev.toppers.jp/trac/hrp3/
+
+
+１３．リファレンス
+
+13.1 サービスコール一覧
+
+(1) タスク管理機能
+
+	ER ercd = act_tsk(ID tskid)
+	ER_UINT	actcnt = can_act(ID tskid)
+	ER ercd = get_tst(ID tskid, STAT *p_tskstat)
+	ER ercd = chg_pri(ID tskid, PRI tskpri)
+	ER ercd = get_pri(ID tskid, PRI *p_tskpri)
+	ER ercd = get_inf(intptr_t *p_exinf)
+	ER ercd = ref_tsk(ID tskid, T_RTSK *pk_rtsk)
+
+(2) タスク付属同期機能
+
+	ER ercd = slp_tsk(void)
+	ER ercd = tslp_tsk(TMO tmout)
+	ER ercd = wup_tsk(ID tskid)
+	ER_UINT wupcnt = can_wup(ID tskid)
+	ER ercd = rel_wai(ID tskid)
+	ER ercd = sus_tsk(ID tskid)
+	ER ercd = rsm_tsk(ID tskid)
+	ER ercd = dly_tsk(RELTIM dlytim)
+
+(3) タスク終了機能
+
+	ER ercd = ext_tsk(void)
+	ER ercd = ras_ter(ID tskid)
+	ER ercd = dis_ter(void)
+	ER ercd = ena_ter(void)
+	bool_t state = sns_ter(void)
+	ER ercd = ter_tsk(ID tskid)
+
+(4) 同期・通信機能
+
+	ER ercd = sig_sem(ID semid)
+	ER ercd = wai_sem(ID semid)
+	ER ercd = pol_sem(ID semid)
+	ER ercd = twai_sem(ID semid, TMO tmout)
+	ER ercd = ini_sem(ID semid)
+	ER ercd = ref_sem(ID semid, T_RSEM *pk_rsem)
+
+	ER ercd = set_flg(ID flgid, FLGPTN setptn)
+	ER ercd = clr_flg(ID flgid, FLGPTN clrptn)
+	ER ercd = wai_flg(ID flgid, FLGPTN waiptn,
+						MODE wfmode, FLGPTN *p_flgptn)
+	ER ercd = pol_flg(ID flgid, FLGPTN waiptn,
+						MODE wfmode, FLGPTN *p_flgptn)
+	ER ercd = twai_flg(ID flgid, FLGPTN waiptn,
+						MODE wfmode, FLGPTN *p_flgptn, TMO tmout)
+	ER ercd = ini_flg(ID flgid)
+	ER ercd = ref_flg(ID flgid, T_RFLG *pk_rflg)
+
+	ER ercd = snd_dtq(ID dtqid, intptr_t data)
+	ER ercd = psnd_dtq(ID dtqid, intptr_t data)
+	ER ercd = tsnd_dtq(ID dtqid, intptr_t data, TMO tmout)
+	ER ercd = fsnd_dtq(ID dtqid, intptr_t data)
+	ER ercd = rcv_dtq(ID dtqid, intptr_t *p_data)
+	ER ercd = prcv_dtq(ID dtqid, intptr_t *p_data)
+	ER ercd = trcv_dtq(ID dtqid, intptr_t *p_data, TMO tmout)
+	ER ercd = ini_dtq(ID dtqid)
+	ER ercd = ref_dtq(ID dtqid, T_RDTQ *pk_rdtq)
+
+	ER ercd = snd_pdq(ID pdqid, intptr_t data, PRI datapri)
+	ER ercd = psnd_pdq(ID pdqid, intptr_t data, PRI datapri)
+	ER ercd = tsnd_pdq(ID pdqid, intptr_t data, PRI datapri, TMO tmout)
+	ER ercd = rcv_pdq(ID pdqid, intptr_t *p_data, PRI *p_datapri)
+	ER ercd = prcv_pdq(ID pdqid, intptr_t *p_data, PRI *p_datapri)
+	ER ercd = trcv_pdq(ID pdqid, intptr_t *p_data, PRI *p_datapri, TMO tmout)
+	ER ercd = ini_pdq(ID pdqid)
+	ER ercd = ref_pdq(ID pdqid, T_RPDQ *pk_rpdq)
+
+	ER ercd = loc_mtx(ID mtxid)
+	ER ercd = ploc_mtx(ID mtxid)
+	ER ercd = tloc_mtx(ID mtxid, TMO tmout) 
+	ER ercd = unl_mtx(ID mtxid)
+	ER ercd = ini_mtx(ID mtxid)
+	ER ercd = ref_mtx(ID mtxid, T_RMTX *pk_rmtx)
+
+	ER ercd = snd_mbf(ID mbfid, const void *msg, uint_t msgsz)
+	ER ercd = psnd_mbf(ID mbfid, const void *msg, uint_t msgsz)
+	ER ercd = tsnd_mbf(ID mbfid, const void *msg,
+										uint_t msgsz, TMO tmout)
+	ER_UINT msgsz = rcv_mbf(ID mbfid, void *msg)
+	ER_UINT msgsz = prcv_mbf(ID mbfid, void *msg)
+	ER_UINT msgsz = trcv_mbf(ID mbfid, void *msg, TMO tmout)
+	ER ercd = ini_mbf(ID mbfid)
+	ER ercd = ref_mbf(ID mbfid, T_RMBF *pk_rmbf)
+
+(5) メモリプール管理機能
+
+	ER ercd = get_mpf(ID mpfid, void **p_blk)
+	ER ercd = pget_mpf(ID mpfid, void **p_blk)
+	ER ercd = tget_mpf(ID mpfid, void **p_blk, TMO tmout)
+	ER ercd = rel_mpf(ID mpfid, void *blk)
+	ER ercd = ini_mpf(ID mpfid)
+	ER ercd = ref_mpf(ID mpfid, T_RMPF *pk_rmpf)
+
+(6) 時間管理機能
+
+	ER ercd = set_tim(SYSTIM systim)
+	ER ercd = get_tim(SYSTIM *p_systim)
+	ER ercd = adj_tim(int32_t adjtim)
+	HRTCNT hrtcnt = fch_hrt(void)
+
+	ER ercd = sta_cyc(ID cycid)
+	ER ercd = stp_cyc(ID cycid)
+	ER ercd = ref_cyc(ID cycid, T_RCYC *pk_rcyc)
+
+	ER ercd = sta_alm(ID almid, RELTIM almtim)
+	ER ercd = stp_alm(ID almid)
+	ER ercd = ref_alm(ID almid, T_RALM *pk_ralm)
+
+(7) システム状態管理機能
+
+	ER ercd = rot_rdq(PRI tskpri)
+	ER ercd = mrot_rdq(ID schedno, PRI tskpri)
+	ER ercd = get_tid(ID *p_tskid)
+	ER ercd = get_did(ID *p_domid)
+	ER ercd = get_lod(PRI tskpri, uint_t *p_load)
+	ER ercd = mget_lod(ID schedno, PRI tskpri, uint_t *p_load)
+	ER ercd = get_nth(PRI tskpri, uint_t nth, ID *p_tskid)
+	ER ercd = mget_nth(ID schedno, PRI tskpri, uint_t nth, ID *p_tskid)
+	ER ercd = loc_cpu(void)
+	ER ercd = unl_cpu(void)
+	ER ercd = dis_dsp(void)
+	ER ercd = ena_dsp(void)
+	bool_t state = sns_ctx(void)
+	bool_t state = sns_loc(void)
+	bool_t state = sns_dsp(void)
+	bool_t state = sns_dpn(void)
+	bool_t state = sns_ker(void)
+	ER ercd = ext_ker(void)
+
+(8) メモリオブジェクト管理機能
+
+	ER ercd = prb_mem(const void *base, size_t size, ID tskid, MODE pmmode)
+	ER ercd = ref_mem(const void *addr, T_RMEM *pk_rmem)
+
+(9) 割込み管理機能
+
+	ER ercd = dis_int(INTNO intno)
+	ER ercd = ena_int(INTNO intno)
+	ER ercd = chg_ipm(PRI intpri)
+	ER ercd = get_ipm(PRI *p_intpri)
+
+(10) CPU例外管理機能
+
+	bool_t stat = xsns_dpn(void *p_excinf)
+
+(11) 拡張サービスコール管理機能
+
+	ER_UINT ercd = cal_svc(FN fncd, intptr_t par1, intptr_t par2,
+						intptr_t par3, intptr_t par4, intptr_t par5)
+
+(12) 保護ドメイン管理機能
+
+	ER ercd = chg_som(ID somid)
+	ER ercd = get_som(ID *p_somid)
+
+13.2 静的API一覧
+
+(1) タスク管理機能
+
+	CRE_TSK(ID tskid, { ATR tskatr, intptr_t exinf, TASK task,
+								PRI itskpri, size_t stksz, STK_T *stk,
+								size_t sstksz, STK_T *sstk })
+	SAC_TSK(ID tskid, { ACPTN acptn1, ACPTN acptn2,
+									ACPTN acptn3, ACPTN acptn4 })
+
+(4) 同期・通信機能
+
+	CRE_SEM(ID semid, { ATR sematr, uint_t isemcnt, uint_t maxsem })
+	SAC_SEM(ID semid, { ACPTN acptn1, ACPTN acptn2,
+									ACPTN acptn3, ACPTN acptn4 })
+	CRE_FLG(ID flgid, { ATR flgatr, FLGPTN iflgptn })
+	SAC_FLG(ID flgid, { ACPTN acptn1, ACPTN acptn2,
+									ACPTN acptn3, ACPTN acptn4 })
+	CRE_DTQ(ID dtqid, { ATR dtqatr, uint_t dtqcnt, void *dtqmb })
+	SAC_DTQ(ID dtqid, { ACPTN acptn1, ACPTN acptn2,
+									ACPTN acptn3, ACPTN acptn4 })
+	CRE_PDQ(ID pdqid, { ATR pdqatr, uint_t pdqcnt, PRI maxdpri, void *pdqmb })
+	SAC_PDQ(ID pdqid, { ACPTN acptn1, ACPTN acptn2,
+									ACPTN acptn3, ACPTN acptn4 })
+	CRE_MTX(ID mtxid, { ATR mtxatr, PRI ceilpri })
+	SAC_MTX(ID mtxid, { ACPTN acptn1, ACPTN acptn2,
+									ACPTN acptn3, ACPTN acptn4 })
+	CRE_MBF(ID mbfid, { ATR mbfatr, uint_t maxmsz, size_t mbfsz, void *mbfmb })
+	SAC_MBF(ID mbfid, { ACPTN acptn1, ACPTN acptn2,
+										ACPTN acptn3, ACPTN acptn4 })
+
+(5) メモリプール管理機能
+
+	CRE_MPF(ID mpfid, { ATR mpfatr, uint_t blkcnt, uint_t blksz,
+										MPF_T *mpf, void *mpfmb })
+	SAC_MPF(ID mpfid, { ACPTN acptn1, ACPTN acptn2,
+									ACPTN acptn3, ACPTN acptn4 })
+
+(6) 時間管理機能
+
+	CRE_CYC(ID cycid, { ATR cycatr, ＜通知方法の指定＞,
+										RELTIM cyctim, RELTIM cycphs })
+	SAC_CYC(ID cycid, { ACPTN acptn1, ACPTN acptn2,
+									ACPTN acptn3, ACPTN acptn4 })
+	CRE_ALM(ID almid, { ATR almatr, ＜通知方法の指定＞ })
+	SAC_ALM(ID almid, { ACPTN acptn1, ACPTN acptn2,
+									ACPTN acptn3, ACPTN acptn4 })
+
+(7) システム状態管理機能
+
+	SAC_SYS({ ACPTN acptn1, ACPTN acptn2,
+									ACPTN acptn3, ACPTN acptn4 })
+(8) メモリオブジェクト管理機能
+
+	ATT_REG(char *regname, { ATR regatr, void *base, size_t size })
+	DEF_SRG(char *stdrom, char *stdram,
+									char *stdsrom, char *stdsram)
+	ATT_SEC(char *secname, { ATR mematr, char *regname },
+		{ ACPTN acptn1, ACPTN acptn2, ACPTN acptn3, ACPTN acptn4 })
+	ATT_MOD(char *modname,
+		{ ACPTN acptn1, ACPTN acptn2, ACPTN acptn3, ACPTN acptn4 })
+	ATT_MEM({ ATR accatr, void *base, SIZE size },
+		{ ACPTN acptn1, ACPTN acptn2, ACPTN acptn3, ACPTN acptn4 })
+	ATT_PMA({ ATR accatr, void *base, SIZE size, void *paddr  },
+		{ ACPTN acptn1, ACPTN acptn2, ACPTN acptn3, ACPTN acptn4 })
+
+(9) 割込み管理機能
+
+	CFG_INT(INTNO intno, { ATR intatr, PRI intpri })
+	CRE_ISR(ID isrid, { ATR isratr, intptr_t exinf,
+								INTNO intno, ISR isr, PRI isrpri })
+	DEF_INH(INHNO inhno, { ATR inhatr, INTHDR inthdr })
+
+(10) CPU例外管理機能
+
+	DEF_EXC(EXCNO excno, { ATR excatr, EXCHDR exchdr })
+
+(11) 拡張サービスコール管理機能
+
+	DEF_SVC(FN fncd, { ATR svcatr, EXTSVC extsvc, size_t stksz })
+
+(12) 保護ドメイン管理機能
+
+	ACV_DOM({ ACPTN acptn1, ACPTN acptn2, ACPTN acptn3, ACPTN acptn4 })
+	LMT_DOM({ PRI mintpri })
+	DEF_SCY({ RELTIM scyctim })
+	CRE_SOM(ID somid, { ATR somatr, ID nxtsom })
+	ATT_TWD({ ID domid, ID somid, int_t twdord, PRCTIM twdlen,
+											＜通知方法の指定＞ })
+
+(13) システム構成管理機能
+
+	DEF_ICS({ size_t istksz, STK_T *istk })
+	ATT_INI({ ATR iniatr, intptr_t exinf, INIRTN inirtn })
+	ATT_TER({ ATR teratr, intptr_t exinf, TERRTN terrtn })
+
+13.3 バージョン履歴
+
+	2016年3月14日	Release	3.B.0		最初の早期リリース（β版）
+	2018年4月20日	Release 3.0.0		最初の一般公開
+	2018年_月__日	Release 3.1.0
+
+以上

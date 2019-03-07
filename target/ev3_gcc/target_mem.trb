@@ -1,0 +1,14 @@
+# -*- coding: utf-8 -*-
+#
+#		パス4の生成スクリプトのターゲット依存部
+#
+
+#
+#  生成スクリプトのコア依存部（チップ依存部は飛ばす）
+#
+IncludeTrb("core_mem.trb")
+
+#
+#  エラーチェック処理
+#
+IncludeTrb("target_check.trb")

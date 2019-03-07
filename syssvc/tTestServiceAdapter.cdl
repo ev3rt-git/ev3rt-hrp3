@@ -1,0 +1,10 @@
+/*
+ *		C言語で記述されたアプリケーションから，TECSベースのテストプログ
+ *		ラム用サービスを呼び出すためのアダプタ用セルタイプの定義
+ *
+ *  $Id: tTestServiceAdapter.cdl 285 2018-03-21 02:55:49Z ertl-hiro $
+ */
+[singleton, active]
+celltype tTestServiceAdapter {
+	call	sTestService	cTestService;
+};

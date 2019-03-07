@@ -1,0 +1,537 @@
+# -*- coding: utf-8 -*-
+#
+#   TOPPERS/HRP Kernel
+#       Toyohashi Open Platform for Embedded Real-Time Systems/
+#       High Reliable system Profile Kernel
+# 
+#   Copyright (C) 2016-2019 by Embedded and Real-Time Systems Laboratory
+#               Graduate School of Information Science, Nagoya Univ., JAPAN
+# 
+#   上記著作権者は，以下の(1)〜(4)の条件を満たす場合に限り，本ソフトウェ
+#   ア（本ソフトウェアを改変したものを含む．以下同じ）を使用・複製・改
+#   変・再配布（以下，利用と呼ぶ）することを無償で許諾する．
+#   (1) 本ソフトウェアをソースコードの形で利用する場合には，上記の著作
+#       権表示，この利用条件および下記の無保証規定が，そのままの形でソー
+#       スコード中に含まれていること．
+#   (2) 本ソフトウェアを，ライブラリ形式など，他のソフトウェア開発に使
+#       用できる形で再配布する場合には，再配布に伴うドキュメント（利用
+#       者マニュアルなど）に，上記の著作権表示，この利用条件および下記
+#       の無保証規定を掲載すること．
+#   (3) 本ソフトウェアを，機器に組み込むなど，他のソフトウェア開発に使
+#       用できない形で再配布する場合には，次のいずれかの条件を満たすこ
+#       と．
+#     (a) 再配布に伴うドキュメント（利用者マニュアルなど）に，上記の著
+#         作権表示，この利用条件および下記の無保証規定を掲載すること．
+#     (b) 再配布の形態を，別に定める方法によって，TOPPERSプロジェクトに
+#         報告すること．
+#   (4) 本ソフトウェアの利用により直接的または間接的に生じるいかなる損
+#       害からも，上記著作権者およびTOPPERSプロジェクトを免責すること．
+#       また，本ソフトウェアのユーザまたはエンドユーザからのいかなる理
+#       由に基づく請求からも，上記著作権者およびTOPPERSプロジェクトを
+#       免責すること．
+# 
+#   本ソフトウェアは，無保証で提供されているものである．上記著作権者お
+#   よびTOPPERSプロジェクトは，本ソフトウェアに関して，特定の使用目的
+#   に対する適合性も含めて，いかなる保証も行わない．また，本ソフトウェ
+#   アの利用により直接的または間接的に生じたいかなる損害に関しても，そ
+#   の責任を負わない．
+# 
+#   $Id: memory_prep.trb 665 2019-02-03 17:06:18Z ertl-hiro $
+# 
+
+#
+#		メモリオブジェクトに関する前処理
+#
+
+#
+#  ATT_REGで登録されたメモリリージョンに関するエラーチェックと前処理
+#
+# $regnameList：登録済みのメモリリージョン名のリスト
+#
+$regnameList = {}
+$cfgData[:ATT_REG].each do |key, params|
+  # 手動メモリ配置の場合（E_NOSPT）［NGKI3909］
+  if $TOPPERS_ML_MANUAL
+    warning_api(params, "%apiname is not supported under manual memory layout")
+    next
+  end
+
+  # メモリリージョン名が登録済みの場合（E_OBJ）［NGKI2801］
+  if $regnameList.has_key?(params[:regname])
+    error_ercd("E_OBJ", params, "memory region `%regname' " \
+									"in %apiname is duplicated")
+  end
+
+  # regatrが無効の場合（E_RSATR）［NGKI2800］［NGKI3256］［NGKI2771］
+  #（TA_NOWRITE，TARGET_REGATR以外のビットがセットされている場合）
+  if (params[:regatr] & ~($TA_NOWRITE|$TARGET_REGATR)) != 0
+    error_illegal_id("E_RSATR", params, :regatr, :regname);
+  end
+
+  # 保護ドメインの囲みの中に記述されている場合（E_RSATR）［NGKI2814］
+  if params.has_key?(:domain)
+    error_ercd("E_RSATR", params, \
+						"%apiname must be outside of protection domains")
+  end
+
+  # sizeが0の場合（E_PAR）［NGKI2816］
+  if params[:size] == 0
+    error_wrong_id("E_PAR", params, :size, :regname, "zero")
+  end
+
+  # base+sizeが最大アドレスを越える場合（E_PAR）［NGKI2815］
+  endaddr = params[:base] + params[:size]
+  if endaddr > $pointerLimit
+    error_wrong_id("E_PAR", params, :size, :regname, "too large")
+  end
+
+  # 登録済みのメモリリージョンと領域が重なる場合（E_OBJ）［NGKI2817］
+  $regnameList.each do |regname2, key2|
+    params2 = $cfgData[:ATT_REG][key2]
+    if (params[:base] < params2[:base] + params2[:size] \
+						&& params2[:base] < params[:base] + params[:size])
+      error_ercd("E_OBJ", params, "memory region `%regname' overlaps " \
+						"with another memory region `#{params2[:regname]}'")
+    end
+  end
+
+  # ターゲット依存のエラーチェック［NGKI2815］
+  if defined? TargetCheckRegion()
+    TargetCheckRegion(params)
+  end
+
+  # $regnameListに登録
+  $regnameList[params[:regname]] = key
+end
+
+#
+#  DEF_SRGで定義された標準メモリリージョンに関するエラーチェックと前処理
+#
+# $standardMemreg[domain]：domainの標準メモリリージョン
+# $standardMemreg[domain][:stdrom]：標準ROMリージョンのメモリリージョン番号
+# $standardMemreg[domain][:stdram]：標準RAMリージョンのメモリリージョン番号
+# $standardMemreg[domain][:stdsrom]：標準ショートROMリージョンのメモリリー
+#									 ジョン番号
+# $standardMemreg[domain][:stdsram]：標準ショートRAMリージョンのメモリリー
+#									 ジョン番号
+#
+$globalVars.push("standardMemreg")
+$standardMemreg = {}
+$cfgData[:DEF_SRG].each do |_, params|
+  # 保護ドメインの囲みの中に記述されていない場合は無所属とする
+  params[:domain] ||= $TDOM_NONE
+
+  # 手動メモリ配置の場合（E_NOSPT）［NGKI3910］
+  if $TOPPERS_ML_MANUAL
+    warning_api(params, "%apiname is not supported under manual memory layout")
+    next
+  end
+
+  # 標準メモリリージョンが定義済みの場合（E_OBJ）［NGKI3263］
+  if $standardMemreg.has_key?(params[:domain])
+    error_ercd("E_OBJ", params, "%apiname is duplicated " \
+							"in protection domain `#{params[:domain]}'")
+  end
+
+  # 標準メモリリージョンに関する情報の初期化
+  stdMemreg = $standardMemreg[params[:domain]] ||= {}
+
+  # stdromに指定したメモリリージョンが未登録の場合（E_OBJ）［NGKI3264］
+  stdrom = params[:stdrom]
+  if $regnameList.has_key?(stdrom)
+    stdMemreg[:stdrom] = $regnameList[stdrom]
+  else
+    error_ercd("E_OBJ", params, "illegal region name `#{stdrom}' in %apiname")
+  end
+
+  # stdramに指定したメモリリージョンが未登録の場合（E_OBJ）［NGKI3264］
+  stdram = params[:stdram]
+  if $regnameList.has_key?(stdram)
+    stdMemreg[:stdram] = $regnameList[stdram]
+  else
+    error_ercd("E_OBJ", params, "illegal region name `#{stdram}' in %apiname")
+  end
+
+  # stdramに指定したメモリリージョンがTA_NOWRITE属性の場合（E_OBJ）［NGKI3270］
+  if ($cfgData[:ATT_REG][$regnameList[stdram]][:regatr] & $TA_NOWRITE) != 0
+    error_ercd("E_OBJ", params, "standard RAM region must not have " \
+										"TA_NOWRITE attribute in %apiname")
+  end
+
+  # stdsromに指定したメモリリージョンが未登録の場合（E_OBJ）［NGKI3264］
+  if params.has_key?(:stdsrom)
+    stdsrom = params[:stdsrom]
+    if $regnameList.has_key?(stdsrom)
+      stdMemreg[:stdsrom] = $regnameList[stdsrom]
+    else
+      error_ercd("E_OBJ", params, \
+							"illegal region name `#{stdsrom}' in %apiname")
+    end
+  else
+    # 標準ショートROMリージョン名の記述を省略した場合［NGKI3988］
+    stdsrom = stdrom
+    stdMemreg[:stdsrom] = stdMemreg[:stdrom]
+  end
+
+  # stdsramに指定したメモリリージョンが未登録の場合（E_OBJ）［NGKI3264］
+  if params.has_key?(:stdsram)
+    stdsram = params[:stdsram]
+    if $regnameList.has_key?(stdsram)
+      stdMemreg[:stdsram] = $regnameList[stdsram]
+    else
+      error_ercd("E_OBJ", params, \
+							"illegal region name `#{stdsram}' in %apiname")
+    end
+  else
+    # 標準ショートRAMリージョン名の記述を省略した場合［NGKI3989］
+    stdsram = stdram
+    stdMemreg[:stdsram] = stdMemreg[:stdram]
+  end
+
+  # stdsramに指定したメモリリージョンがTA_NOWRITE属性の場合（E_OBJ）［NGKI3270］
+  if ($cfgData[:ATT_REG][$regnameList[stdsram]][:regatr] & $TA_NOWRITE) != 0
+    error_ercd("E_OBJ", params, "standard short RAM region must not have " \
+										"TA_NOWRITE attribute in %apiname")
+  end
+end
+
+if $TOPPERS_ML_AUTO
+  $globalVars.push("commonMemreg")
+  if $standardMemreg.has_key?($TDOM_NONE)
+    $commonMemreg = $standardMemreg[$TDOM_NONE]
+  else
+    # 保護ドメイン共通の標準メモリリージョンがない場合［NGKI3259］
+    # ここで処理を止める（以降のエラーの抑止）
+    error_exit("no independent standard memory region is defined")
+  end
+
+  # 保護ドメイン向けの標準メモリリージョンの未定義のものを定義
+  $domData.each do |key, params|
+    if !$standardMemreg.has_key?(key)
+      $standardMemreg[key] = $commonMemreg
+    end
+  end
+end
+
+#
+#  統合前のメモリオブジェクトの情報を$memObjに生成する．
+#
+# $lastMOKey：最後に登録したメモリオブジェクトのキー
+# $memObj[key][:type]：メモリオブジェクトのタイプ
+#	:ATTMOD：ATT_MODで登録されたセクション
+#			 オブジェクトモジュール名を$memObj[key][:modname]に設定
+#	:ATTSEC：ATT_SECで登録されたセクション
+#	:ATTMEM：ATT_MEM／ATT_PMAで登録されたセクション
+#			 先頭番地を$memObj[key][:base]に設定
+#			 サイズを$memObj[key][:size]に設定
+#			 物理アドレスを$memObj[key][:paddr]に設定（ATT_PMAの時）
+#	:USTACK：タスクのユーザスタック領域（レッドゾーン方式の場合のダミー
+#			 スタック領域もこのタイプ）
+#			 ユーザスタック領域を配置する順序を，$memObj[key][:stkorder]
+#			 に設定．レッドゾーン方式でない場合はタスクIDに（ユーザスタッ
+#			 ク領域をコンフィギュレータが割り付ける場合のみ）
+#			 先頭番地を$memObj[key][:base]に設定（ユーザスタック領域をア
+#			 プリケーションが指定した場合のみ）
+#			 サイズを$memObj[key][:size]に設定
+#	:MPFAREA：固定長メモリプール領域（コンフィギュレータが割り付ける場合
+#			  のみ）
+#			  固定長メモリプールIDを$memObj[key][:mpfid]に設定
+# $memObj[key][:linker]：リンカが配置するメモリオブジェクトか？
+# $memObj[key][:domain]：属するドメイン（無所属の場合は$TDOM_NONE）
+# $memObj[key][:memreg]：メモリリージョン番号（リンカが配置する場合のみ）
+# $memObj[key][:secname]：セクション名（リンカが配置する場合のみ）
+# $memObj[key][:mematr]：メモリオブジェクト属性
+# $memObj[key][:acptn1]：通常操作1（書込み）のアクセス許可パターン
+# $memObj[key][:acptn2]：通常操作2（読出し，実行）のアクセス許可パターン
+# $memObj[key][:acptn4]：参照操作のアクセス許可パターン
+# $memObj[key][:apiname]：メモリオブジェクトを登録した静的APIの名称
+# $memObj[key][:_file_]：メモリオブジェクトを登録した静的APIのファイル名
+# $memObj[key][:_line_]：メモリオブジェクトを登録した静的APIの行番号
+# $ustackListLinker：コンフィギュレータが割り付けるユーザスタック領域のリスト
+# $ustackListUser：先頭番地を指定されたユーザスタック領域のリスト
+#
+$globalVars.push("memObj")
+$lastMOKey = 0
+$memObj = {}
+$ustackListLinker = []
+$ustackListUser = []
+
+#
+#  ATT_MODしたのと同等に扱うオブジェクトモジュールの処理
+#
+# カーネルドメインの先頭：START_OBJS
+# カーネルドメインの末尾：kernel_cfg.o, kernel_mem.o, libkernel.a，END_OBJS
+# 無所属の末尾：TARGET_LIBS
+#
+if $TOPPERS_SUPPORT_ATT_MOD
+  firstKey = 0
+  lastKey = $cfgData[:ATT_MOD].size
+
+  def ModuleParams(modName, domain)
+	return({ modname: modName, domain: domain })
+  end
+
+  if defined?($START_OBJS)
+    $START_OBJS.each do |modName|
+      $cfgData[:ATT_MOD][firstKey -= 1] = ModuleParams(modName, $TDOM_KERNEL)
+    end
+  end
+
+  $cfgData[:ATT_MOD][lastKey += 1] = ModuleParams("kernel_cfg.o", $TDOM_KERNEL)
+  $cfgData[:ATT_MOD][lastKey += 1] = ModuleParams("kernel_mem.o", $TDOM_KERNEL)
+  $cfgData[:ATT_MOD][lastKey += 1] = ModuleParams("libkernel.a", $TDOM_KERNEL)
+  if defined?($END_OBJS)
+    $END_OBJS.each do |modName|
+      $cfgData[:ATT_MOD][lastKey += 1] = ModuleParams(modName, $TDOM_KERNEL)
+    end
+  end
+  if defined?($TARGET_LIBS)
+    $TARGET_LIBS.each do |modName|
+      $cfgData[:ATT_MOD][lastKey += 1] = ModuleParams(modName, $TDOM_NONE)
+    end
+  end
+end
+
+#
+#  ATT_MODで登録されたオブジェクトモジュールに関するエラーチェックと情報の生成
+#
+# modnameList：登録済みのオブジェクトモジュールのリスト（ここでのみ使用）
+#
+modnameList = {}
+$cfgData[:ATT_MOD].sort.each do |key, params|
+  if params.has_key?(:apiname)
+    # 保護ドメインの囲みの中に記述されていない場合は無所属とする
+    params[:domain] ||= $TDOM_NONE
+
+    # 手動メモリ配置の場合（E_NOSPT）［NGKI3913］［NGKI2861］
+    if $TOPPERS_ML_MANUAL
+      warning_api(params,
+					"%apiname is not supported under manual memory layout")
+      next
+    end
+
+    # ATT_MODがサポートされていない場合（E_NOSPT）［NGKI2859］［NGKI2861］
+    if !$TOPPERS_SUPPORT_ATT_MOD
+      error_ercd("E_NOSPT", params, "%apiname is not supported on this target")
+    end
+
+    # modnameが登録済みの場合（E_OBJ）［NGKI2848］
+    if modnameList.has_key?(params[:modname])
+      error_ercd("E_OBJ", params, "object module `#{params[:modname]}' " \
+												"in %apiname is duplicated")
+    end
+
+    # ターゲット依存のエラーチェック［NGKI2858］
+    if defined? TargetCheckModule()
+      TargetCheckModule(params)
+    end
+  end
+
+  # メモリオブジェクト情報の生成
+  $defaultSections.each do |sectionInfo|
+    params2 = {}
+    params2[:type] = :ATTMOD
+    params2[:modname] = params[:modname]
+    params2[:linker] = true
+    params2[:domain] = params[:domain]
+    params2[:memreg] = $standardMemreg[params[:domain]][sectionInfo[:MEMREG]]
+    params2[:secname] = sectionInfo[:SECNAME]
+    params2[:mematr] = sectionInfo[:MEMATR]
+    params2[:acptn1] = params[:acptn1] || $defaultAcptn[params[:domain]]
+    params2[:acptn2] = params[:acptn2] || $defaultAcptn[params[:domain]]
+    params2[:acptn4] = params[:acptn4] || $defaultAcptn[params[:domain]]
+    if params.has_key?(:apiname)
+      params2[:apiname] = params[:apiname]
+      params2[:_file_] = params[:_file_]
+      params2[:_line_] = params[:_line_]
+    end
+    $memObj[$lastMOKey += 1] = params2
+  end
+
+  # modnameListに登録
+  modnameList[params[:modname]] = key
+end
+
+#
+#  ATT_SECで登録できないセクション名のリストの作成
+#
+# ターゲット依存部で定義した$targetStandardSectionListに，ターゲット依
+# 存部で定義した$defaultSectionsで定義される標準のセクションのリストを
+# 追加する．
+#
+# $standardSecnameList：登録できないセクション名のリスト
+#
+if $TOPPERS_ML_AUTO
+  $standardSecnameList = ($targetStandardSecnameList || [])
+  if $TOPPERS_SUPPORT_ATT_MOD
+    $defaultSections.each do |sectionInfo|
+      $standardSecnameList.push(sectionInfo[:SECNAME])
+    end
+  end
+end
+
+#
+#  ATT_SECで登録されたセクションに関するエラーチェックと情報の生成
+#
+# secnameList：登録済みのセクション名のリスト（ここでのみ使用）
+#
+secnameList = {}
+$cfgData[:ATT_SEC].each do |key, params|
+  # 手動メモリ配置の場合（E_NOSPT）［NGKI3911］
+  if $TOPPERS_ML_MANUAL
+    warning_api(params, "%apiname is not supported under manual memory layout")
+    next
+  end
+
+  # secnameが登録できないセクションの場合（E_PAR）［NGKI2834］［NGKI2836］
+  if $standardSecnameList.include?(params[:secname])
+    error_ercd("E_PAR", params, "default section `%secname' " \
+								"cannot be attached with %apiname")
+  end
+
+  # secnameが登録済みの場合（E_OBJ）［NGKI2821］
+  if secnameList.has_key?(params[:secname])
+    error_ercd("E_OBJ", params, "section `%secname' in %apiname is duplicated")
+  end
+
+  # 指定したメモリリージョンが未登録の場合［NGKI2822］
+  if params.has_key?(:regname)
+    if $regnameList.has_key?(params[:regname])
+      memreg = $regnameList[params[:regname]]
+    else
+      error_ercd("E_OBJ", params, "illegal region name " \
+							"`#{params[:regname]}' in %apiname")
+      # 以降のエラーの抑止
+      memreg = $commonMemreg[:stdrom]
+    end
+  end
+
+  # 保護ドメインの囲みの中に記述されていない場合は無所属とする
+  params[:domain] ||= $TDOM_NONE
+
+  # mematrが無効の場合（E_RSATR）［NGKI2820］［NGKI2775］［NGKI2794］
+  #（TA_NOWRITE，TA_NOREAD，TA_EXEC，TA_MEMINI，TA_MEMZERO，TA_SDATA，
+  #　TA_UNCACHE，TA_IODEV，TARGET_MEMATR以外のビットがセットされてい
+  #　る場合）
+  if (params[:mematr] & ~($TA_NOWRITE|$TA_NOREAD|$TA_EXEC|$TA_MEMINI \
+						   |$TA_MEMZERO|$TA_SDATA|$TA_UNCACHE \
+						   |$TA_IODEV|$TARGET_MEMATR)) != 0
+    error_illegal("E_RSATR", params, :mematr)
+  end
+
+  # メモリリージョンが記述されていない場合［NGKI5150］
+  if !params.has_key?(:regname)
+    if (params[:mematr] & $TA_SDATA) == 0
+      if (params[:mematr] & $TA_NOWRITE) != 0
+        memreg = $standardMemreg[params[:domain]][:stdrom]
+      else
+        memreg = $standardMemreg[params[:domain]][:stdram]
+      end
+    else
+      if (params[:mematr] & $TA_NOWRITE) != 0
+        memreg = $standardMemreg[params[:domain]][:stdsrom]
+      else
+        memreg = $standardMemreg[params[:domain]][:stdsram]
+      end
+    end
+  end
+
+  # メモリリージョン属性にTA_NOWRITEが設定されている場合で，
+  # mematrにTA_NOWRITEを指定していない場合（E_RSATR）［NGKI5058］
+  # mematrにTA_MEMINIかTA_MEMZEROを指定した場合（E_RSATR）［NGKI5059］
+  if ($cfgData[:ATT_REG][memreg][:regatr] & $TA_NOWRITE) != 0 \
+	 && ((params[:mematr] & $TA_NOWRITE) == 0 \
+		 || (params[:mematr] & ($TA_MEMINI|$TA_MEMZERO)) != 0)
+    error_illegal("E_RSATR", params, :mematr)
+  end
+
+  # mematrにTA_MEMINIとTA_MEMZEROの両方を指定した場合（TA_RSATR）
+  # ［NGKI2828］
+  if (params[:mematr] & ($TA_MEMINI|$TA_MEMZERO)) == ($TA_MEMINI|$TA_MEMZERO)
+    error_illegal("E_RSATR", params, :mematr)
+  end
+
+  # ターゲット依存のエラーチェック［NGKI2832］
+  if defined? TargetCheckSection()
+    TargetCheckSection(params)
+  end
+
+  # メモリオブジェクト情報の生成
+  params2 = {}
+  params2[:type] = :ATTSEC
+  params2[:linker] = true
+  params2[:domain] = params[:domain]
+  params2[:memreg] = memreg
+  params2[:secname] = params[:secname]
+  params2[:mematr] = params[:mematr]
+  params2[:acptn1] = params[:acptn1] || $defaultAcptn[params[:domain]]
+  params2[:acptn2] = params[:acptn2] || $defaultAcptn[params[:domain]]
+  params2[:acptn4] = params[:acptn4] || $defaultAcptn[params[:domain]]
+  params2[:apiname] = params[:apiname]
+  params2[:_file_] = params[:_file_]
+  params2[:_line_] = params[:_line_]
+  $memObj[$lastMOKey += 1] = params2
+
+  # secnameListに登録
+  secnameList[params[:secname]] = key
+end
+
+#
+#  ATT_MEM／ATT_PMAで登録されたメモリ領域に関するエラーチェックと情報の生成
+#
+$cfgData[:ATT_MEM].each do |key, params|
+  if params.has_key?(:paddr)
+    # ATT_PMAがサポートされていない場合（E_NOSPT）［NGKI2905］
+    if !$TOPPERS_SUPPORT_ATT_PMA
+      error_ercd("E_NOSPT", params, "%apiname is not supported on this target")
+    end
+  end
+
+  # 保護ドメインの囲みの中に記述されていない場合は無所属とする
+  params[:domain] ||= $TDOM_NONE
+
+  # accatrが無効の場合（E_RSATR）［NGKI2867］［NGKI3889］［NGKI3986］
+  # ［NGKI3987］
+  #（TA_NOWRITE，TA_NOREAD，TA_EXEC，TA_UNCACHE，TA_IODEV，TARGET_ACCATR
+  #　以外のビットがセットされている場合）
+  if (params[:accatr] & ~($TA_NOWRITE|$TA_NOREAD|$TA_EXEC|$TA_UNCACHE \
+										|$TA_IODEV|$TARGET_ACCATR)) != 0
+    error_illegal("E_RSATR", params, :accatr)
+  end
+
+  # sizeが0の場合［NGKI2881］［NGKI2901］
+  if params[:size] == 0
+    error_wrong("E_PAR", params, :size, "zero")
+  end
+
+  # ターゲット依存のエラーチェック
+  if defined? TargetCheckMemory()
+    TargetCheckMemory(params)
+  end
+
+  # メモリオブジェクト情報の生成
+  params2 = {}
+  params2[:type] = :ATTMEM
+  params2[:base] = params[:base]
+  params2[:size] = params[:size]
+  if params.has_key?(:paddr)
+    params2[:paddr] = params[:paddr]
+  end
+  params2[:linker] = false
+  params2[:domain] = params[:domain]
+  params2[:mematr] = params[:accatr]
+  params2[:acptn1] = params[:acptn1] || $defaultAcptn[params[:domain]]
+  params2[:acptn2] = params[:acptn2] || $defaultAcptn[params[:domain]]
+  params2[:acptn4] = params[:acptn4] || $defaultAcptn[params[:domain]]
+  params2[:apiname] = params[:apiname]
+  params2[:_file_] = params[:_file_]
+  params2[:_line_] = params[:_line_]
+  $memObj[$lastMOKey += 1] = params2
+end
+
+#
+#  ターゲット依存のメモリオブジェクト情報の操作
+#
+if defined? TargetMemoryObject()
+  TargetMemoryObject()
+end

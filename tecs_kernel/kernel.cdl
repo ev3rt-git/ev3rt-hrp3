@@ -1,0 +1,934 @@
+/*
+ *  TOPPERS/HRP Kernel
+ *      Toyohashi Open Platform for Embedded Real-Time Systems/
+ *      High Reliable system Profile Kernel
+ * 
+ *  Copyright (C) 2015,2016 by Ushio Laboratory
+ *              Graduate School of Engineering Science, Osaka Univ., JAPAN
+ *  Copyright (C) 2015-2018 by Embedded and Real-Time Systems Laboratory
+ *              Graduate School of Information Science, Nagoya Univ., JAPAN
+ * 
+ *  上記著作権者は，以下の(1)〜(4)の条件を満たす場合に限り，本ソフトウェ
+ *  ア（本ソフトウェアを改変したものを含む．以下同じ）を使用・複製・改
+ *  変・再配布（以下，利用と呼ぶ）することを無償で許諾する．
+ *  (1) 本ソフトウェアをソースコードの形で利用する場合には，上記の著作
+ *      権表示，この利用条件および下記の無保証規定が，そのままの形でソー
+ *      スコード中に含まれていること．
+ *  (2) 本ソフトウェアを，ライブラリ形式など，他のソフトウェア開発に使
+ *      用できる形で再配布する場合には，再配布に伴うドキュメント（利用
+ *      者マニュアルなど）に，上記の著作権表示，この利用条件および下記
+ *      の無保証規定を掲載すること．
+ *  (3) 本ソフトウェアを，機器に組み込むなど，他のソフトウェア開発に使
+ *      用できない形で再配布する場合には，次のいずれかの条件を満たすこ
+ *      と．
+ *    (a) 再配布に伴うドキュメント（利用者マニュアルなど）に，上記の著
+ *        作権表示，この利用条件および下記の無保証規定を掲載すること．
+ *    (b) 再配布の形態を，別に定める方法によって，TOPPERSプロジェクトに
+ *        報告すること．
+ *  (4) 本ソフトウェアの利用により直接的または間接的に生じるいかなる損
+ *      害からも，上記著作権者およびTOPPERSプロジェクトを免責すること．
+ *      また，本ソフトウェアのユーザまたはエンドユーザからのいかなる理
+ *      由に基づく請求からも，上記著作権者およびTOPPERSプロジェクトを
+ *      免責すること．
+ * 
+ *  本ソフトウェアは，無保証で提供されているものである．上記著作権者お
+ *  よびTOPPERSプロジェクトは，本ソフトウェアに関して，特定の使用目的
+ *  に対する適合性も含めて，いかなる保証も行わない．また，本ソフトウェ
+ *  アの利用により直接的または間接的に生じたいかなる損害に関しても，そ
+ *  の責任を負わない．
+ * 
+ *  $Id: kernel.cdl 285 2018-03-21 02:55:49Z ertl-hiro $
+ */
+
+/*
+ *		TOPPERS/HRPカーネルオブジェクト コンポーネント記述ファイル
+ */
+
+/*
+ *  カーネルオブジェクトのコンポーネント化のためのヘッダファイル
+ */
+import_C("tecs_kernel.h");
+
+/*
+ *  カーネルドメインのリージョン指定
+ */
+[domain(HRP, "kernel")]
+region rKernelDomain {
+};
+
+/*
+ *  カーネル操作のシグニチャ（タスクコンテキスト用）
+ */
+signature sKernel {
+	ER		getExtendedInformation([out] intptr_t *p_exinf);
+
+	ER		sleep(void);
+	ER		sleepTimeout([in] TMO timeout);
+	ER		delay([in] RELTIM delayTime);
+
+	ER		exit(void);
+	ER		disableTerminate(void);
+	ER		enableTerminate(void);
+	bool_t	senseTerminate(void);
+
+	ER		setTime([in] SYSTIM systemTime);
+	ER		getTime([out] SYSTIM *p_systemTime);
+	ER		adjustTime([in] int32_t adjustTime);
+	HRTCNT	fetchHighResolutionTimer(void);
+
+	ER		rotateReadyQueue([in] PRI taskPriority);
+	ER		multiRotateReadyQueue([in] ID domainId, [in] PRI taskPriority);
+	ER		getTaskId([out] ID *p_taskId);
+	ER		getDomainId([out] ID *p_domainId);
+	ER		getLoad([in] PRI taskPriority, [out] uint_t *p_load);
+	ER		multiGetLoad([in] ID domainId, [in] PRI taskPriority,
+													[out] uint_t *p_load);
+	ER		getNthTask([in] PRI taskPriority, [in] uint_t nth,
+													[out] ID *p_taskID);
+	ER		multiGetNthTask([in] ID domainId, [in] PRI taskPriority,
+									[in] uint_t nth, [out] ID *p_taskID);
+	ER		lockCpu(void);
+	ER		unlockCpu(void);
+	ER		disableDispatch(void);
+	ER		enableDispatch(void);
+	bool_t	senseContext(void);
+	bool_t	senseLock(void);
+	bool_t	senseDispatch(void);
+	bool_t	senseDispatchPendingState(void);
+	bool_t	senseKernel(void);
+	ER		exitKernel(void);
+
+	ER		probeMemory([in] const void *base, [in] size_t size,
+							[in] ID taskId, [in] MODE probeMemoryMode);
+	ER		referMemory([in] const void *address,
+										[out] T_RMEM *pk_memoryStatus);
+
+	ER		changeInterruptPriorityMask([in] PRI interruptPriority);
+	ER		getInterruptPriorityMask([out] PRI *p_interruptPriority);
+
+	ER		changeSystemOperationMode([in] ID somId);
+	ER		getSystemOperationMode([out] ID *p_somId);
+};
+
+/*
+ *  カーネル操作のシグニチャ（非タスクコンテキスト用）
+ */
+[context("non-task")]
+signature siKernel {
+	HRTCNT	fetchHighResolutionTimer(void);
+
+	ER		rotateReadyQueue([in] PRI taskPriority);
+	ER		multiRotateReadyQueue([in] ID domainId, [in] PRI taskPriority);
+	ER		getTaskId([out]ID *p_taskId);
+	ER		getDomainId([out] ID *p_domainId);
+	ER		lockCpu(void);
+	ER		unlockCpu(void);
+	bool_t	senseContext(void);
+	bool_t	senseLock(void);
+	bool_t	senseDispatch(void);
+	bool_t	senseDispatchPendingState(void);
+	bool_t	senseKernel(void);
+	ER		exitKernel(void);
+
+	/* CPU例外ハンドラ中で使用する */
+	bool_t	exceptionSenseDispatchPendingState
+						([in] const void *p_exceptionInformation);
+};
+
+/*
+ *  カーネルのセルタイプ
+ */
+[singleton]
+celltype tKernel {
+	[inline] entry	sKernel		eKernel;
+	[inline] entry	siKernel	eiKernel;
+
+	attr {
+		[omit] ACPTN	accessPattern1 = C_EXP("OMIT");
+		[omit] ACPTN	accessPattern2 = C_EXP("OMIT");
+		[omit] ACPTN	accessPattern3 = C_EXP("OMIT");
+		[omit] ACPTN	accessPattern4 = C_EXP("OMIT");
+	};
+};
+
+/*
+ *  タイムイベント通知を受け取るためのシグネチャ
+ */
+[context("non-task")]
+signature siNotificationHandler {
+};
+
+/*
+ *  タスク本体のシグニチャ
+ */
+signature sTaskBody {
+	void	main(void);
+};
+
+/*
+ *  タスク操作のシグニチャ（タスクコンテキスト用）
+ */
+signature sTask {
+	ER		activate(void);
+	ER_UINT	cancelActivate(void);
+	ER		getTaskState([out] STAT *p_tskstat);
+	ER		changePriority([in] PRI priority);
+	ER		getPriority([out] PRI *p_priority);
+	ER		refer([out] T_RTSK *pk_taskStatus);
+
+	ER		wakeup(void);
+	ER_UINT	cancelWakeup(void);
+	ER		releaseWait(void);
+	ER		suspend(void);
+	ER		resume(void);
+
+	ER		raiseTerminate(void);
+	ER		terminate(void);
+};
+
+/*
+ *  タスク操作のシグニチャ（非タスクコンテキスト用）
+ */
+[context("non-task")]
+signature siTask {
+	ER		activate(void);
+	ER		wakeup(void);
+	ER		releaseWait(void);
+};
+
+/*
+ *  タスクのセルタイプ
+ *
+ *  タスクはいずれかの保護ドメインに所属させなければならない．
+ */
+[active, generate(HRPTaskPlugin, "")]
+celltype tTask {
+	[inline] entry	sTask	eTask;
+	[inline] entry	siTask	eiTask;
+	call	sTaskBody	cTaskBody;
+
+	[inline] entry	siNotificationHandler	eiActivateNotificationHandler;
+	[inline] entry	siNotificationHandler	eiWakeUpNotificationHandler;
+
+	attr {
+		ID				id = C_EXP("TSKID_$id$");
+		[omit] ATR		attribute = C_EXP("TA_NULL");
+		[omit] PRI		priority;
+		[omit] size_t	stackSize;
+		[omit] size_t	systemStackSize = 0;
+						/* 0を，未定義を示す値として使っている */
+
+		[omit] ACPTN	accessPattern1 = C_EXP("OMIT");
+		[omit] ACPTN	accessPattern2 = C_EXP("OMIT");
+		[omit] ACPTN	accessPattern3 = C_EXP("OMIT");
+		[omit] ACPTN	accessPattern4 = C_EXP("OMIT");
+						/* OMITを，未定義を示す文字列として使っている */
+	};
+
+	FACTORY {
+		write("tecsgen.cfg", "#include \"$ct$_tecsgen.h\"");
+		write("$ct$_factory.h", "#include \"kernel_cfg.h\"");
+	};
+};
+
+/*
+ *  セマフォ操作のシグニチャ（タスクコンテキスト用）
+ */
+signature sSemaphore {
+	ER		signal(void);
+	ER		wait(void);
+	ER		waitPolling(void);
+	ER		waitTimeout([in] TMO timeout);
+	ER		initialize(void);
+	ER		refer([out] T_RSEM *pk_semaphoreStatus);
+};
+
+/*
+ *  セマフォ操作のシグニチャ（非タスクコンテキスト用）
+ */
+[context("non-task")]
+signature siSemaphore {
+	ER		signal(void);
+};
+
+/*
+ *  セマフォのセルタイプ
+ */
+[generate(HRPObjectPlugin, "SEMAPHORE")]
+celltype tSemaphore {
+	[inline] entry	sSemaphore	eSemaphore;
+	[inline] entry	siSemaphore	eiSemaphore;
+
+	[inline] entry	siNotificationHandler	eiNotificationHandler;
+
+	attr {
+		ID				id = C_EXP("SEMID_$id$");
+		[omit] ATR		attribute = C_EXP("TA_NULL");
+		[omit] uint_t	initialCount;
+		[omit] uint_t	maxCount = 1;
+
+		[omit] ACPTN	accessPattern1 = C_EXP("OMIT");
+		[omit] ACPTN	accessPattern2 = C_EXP("OMIT");
+		[omit] ACPTN	accessPattern3 = C_EXP("OMIT");
+		[omit] ACPTN	accessPattern4 = C_EXP("OMIT");
+	};
+
+	FACTORY {
+		write("$ct$_factory.h", "#include \"kernel_cfg.h\"");
+	};
+};
+
+/*
+ *  イベントフラグ操作のシグニチャ（タスクコンテキスト用）
+ */
+signature sEventflag {
+	ER		set([in] FLGPTN setPattern);
+	ER		clear([in] FLGPTN clearPattern);
+	ER		wait([in] FLGPTN waitPattern, [in] MODE waitMode,
+											[out] FLGPTN *p_flagPattern);
+	ER		waitPolling([in] FLGPTN waitPattern, [in] MODE waitMode,
+											[out] FLGPTN *p_flagPattern);
+	ER		waitTimeout([in] FLGPTN waitPattern, [in] MODE waitMode,
+							[out] FLGPTN *p_flagPattern, [in] TMO timeout);
+	ER		initialize(void);
+	ER		refer([out] T_RFLG *pk_eventflagStatus);
+};
+
+/*
+ *  イベントフラグ操作のシグニチャ（非タスクコンテキスト用）
+ */
+[context("non-task")]
+signature siEventflag {
+	ER		set([in] FLGPTN setPattern);
+};
+
+/*
+ *  イベントフラグのセルタイプ
+ */
+[generate(HRPObjectPlugin, "EVENTFLAG")]
+celltype tEventflag {
+	[inline] entry	sEventflag	eEventflag;
+	[inline] entry	siEventflag	eiEventflag;
+
+	[inline] entry	siNotificationHandler	eiNotificationHandler;
+
+	attr {
+		ID				id = C_EXP("FLGID_$id$");
+		[omit] ATR		attribute = C_EXP("TA_NULL");
+		[omit] FLGPTN	flagPattern;
+
+		[omit] ACPTN	accessPattern1 = C_EXP("OMIT");
+		[omit] ACPTN	accessPattern2 = C_EXP("OMIT");
+		[omit] ACPTN	accessPattern3 = C_EXP("OMIT");
+		[omit] ACPTN	accessPattern4 = C_EXP("OMIT");
+	};
+
+	FACTORY {
+		write("$ct$_factory.h", "#include \"kernel_cfg.h\"");
+	};
+};
+
+/*
+ *  データキュー操作のシグニチャ（タスクコンテキスト用）
+ */
+signature sDataqueue {
+	ER 		send([in] intptr_t data);
+	ER 		sendPolling([in] intptr_t data);
+	ER 		sendTimeout([in] intptr_t data, [in] TMO timeout);
+	ER 		sendForce([in] intptr_t data);
+	ER 		receive([out] intptr_t *p_data);
+	ER 		receivePolling([out] intptr_t *p_data);
+	ER 		receiveTimeout([out] intptr_t *p_data, [in] TMO timeout);
+	ER 		initialize(void);
+	ER 		refer([out] T_RDTQ *pk_dataqueueStatus);
+};
+
+/*
+ *  データキュー操作のシグニチャ（非タスクコンテキスト用）
+ */
+[context("non-task")]
+signature siDataqueue {
+	ER		sendPolling([in] intptr_t data);
+	ER		sendForce([in] intptr_t data);
+};
+
+/*
+ *  データキューのセルタイプ
+ */
+[generate(HRPObjectPlugin, "DATAQUEUE")]
+celltype tDataqueue {
+	[inline] entry	sDataqueue	eDataqueue;
+	[inline] entry	siDataqueue	eiDataqueue;
+
+	[inline] entry	siNotificationHandler	eiNotificationHandler;
+
+	attr {
+		ID				id = C_EXP("DTQID_$id$");
+		[omit] ATR		attribute = C_EXP("TA_NULL");
+		[omit] uint_t	dataCount = 1;
+		[omit] void		*dataqueueManagementBuffer = C_EXP("NULL");
+
+		[omit] ACPTN	accessPattern1 = C_EXP("OMIT");
+		[omit] ACPTN	accessPattern2 = C_EXP("OMIT");
+		[omit] ACPTN	accessPattern3 = C_EXP("OMIT");
+		[omit] ACPTN	accessPattern4 = C_EXP("OMIT");
+	};
+
+	FACTORY {
+		write("$ct$_factory.h", "#include \"kernel_cfg.h\"");
+	};
+};
+
+/*
+ *  優先度データキュー操作のシグニチャ（タスクコンテキスト用）
+ */
+signature sPriorityDataqueue {
+	ER 		send([in] intptr_t data, [in] PRI dataPriority);
+	ER 		sendPolling([in] intptr_t data, [in] PRI dataPriority);
+	ER 		sendTimeout([in] intptr_t data, [in] PRI dataPriority,
+													[in] TMO timeout);
+	ER 		receive([out] intptr_t *p_data, [out] PRI *p_dataPriority);
+	ER 		receivePolling([out] intptr_t *p_data, [out] PRI *p_dataPriority);
+ 	ER 		receiveTimeout([out] intptr_t *p_data, [out] PRI *p_dataPriority,
+													[in] TMO timeout);
+	ER 		initialize(void);
+	ER 		refer([out] T_RPDQ *pk_priorityDataqueueStatus);
+};
+
+/*
+ *  優先度データキュー操作のシグニチャ（非タスクコンテキスト用）
+ */
+[context("non-task")]
+signature siPriorityDataqueue {
+	ER		sendPolling([in] intptr_t data, [in] PRI dataPriority);
+};
+
+/*
+ *  優先度データキューのセルタイプ
+ */
+[generate(HRPObjectPlugin, "PRIORITY_DATAQUEUE")]
+celltype tPriorityDataqueue {
+	[inline] entry	sPriorityDataqueue	ePriorityDataqueue;
+	[inline] entry	siPriorityDataqueue	eiPriorityDataqueue;
+
+	attr {
+		ID				id = C_EXP("PDTQID_$id$");
+		[omit] ATR		attribute = C_EXP("TA_NULL");
+		[omit] uint_t	dataCount = 1;
+		[omit] PRI		maxDataPriority;
+		[omit] void		*priorityDataqueueManagementBuffer = C_EXP("NULL");
+
+		[omit] ACPTN	accessPattern1 = C_EXP("OMIT");
+		[omit] ACPTN	accessPattern2 = C_EXP("OMIT");
+		[omit] ACPTN	accessPattern3 = C_EXP("OMIT");
+		[omit] ACPTN	accessPattern4 = C_EXP("OMIT");
+	};
+
+	FACTORY {
+		write("$ct$_factory.h", "#include \"kernel_cfg.h\"");
+	};
+};
+
+/*
+ *  ミューテックス操作のシグニチャ（タスクコンテキスト用）
+ */
+signature sMutex {
+	ER		lock(void);
+	ER		lockPolling(void);
+	ER		lockTimeout([in] TMO timeout);
+	ER		unlock(void);
+	ER		initialize(void);
+	ER		refer([out] T_RMTX *pk_mutexStatus);
+};
+
+/*
+ *  ミューテックスのセルタイプ
+ */
+[generate(HRPObjectPlugin, "MUTEX")]
+celltype tMutex {
+	[inline] entry	sMutex	eMutex;
+
+	attr {
+		ID				id = C_EXP("MTXID_$id$");
+		[omit] ATR		attribute = C_EXP("TA_NULL");
+		[omit] PRI		ceilingPriority = 0;
+						/* 0を，未定義を示す値として使っている */
+
+		[omit] ACPTN	accessPattern1 = C_EXP("OMIT");
+		[omit] ACPTN	accessPattern2 = C_EXP("OMIT");
+		[omit] ACPTN	accessPattern3 = C_EXP("OMIT");
+		[omit] ACPTN	accessPattern4 = C_EXP("OMIT");
+	};
+
+	FACTORY {
+		write("$ct$_factory.h", "#include \"kernel_cfg.h\"");
+	};
+};
+
+/*
+ *  メッセージバッファ操作のシグニチャ（タスクコンテキスト用）
+ */
+signature sMessageBuffer {
+	ER		send([in, size_is(size)] const uint8_t *message,
+														[in] uint32_t size);
+	ER		sendPolling([in, size_is(size)] const uint8_t *message,
+		 												[in] uint32_t size);
+	ER		sendTimeout([in, size_is(size)] const uint8_t *message,
+										[in] uint32_t size, [in] TMO timeout);
+	ER_UINT	receive([out] uint8_t *message);
+	ER_UINT	receivePolling([out] uint8_t *message);
+	ER_UINT	receiveTimeout([out] uint8_t *message, [in] TMO timeout);
+	ER		initialize(void);
+	ER		refer([out] T_RMBF *pk_messageBufferStatus);
+};
+
+/*
+ *  メッセージバッファのセルタイプ
+ */
+[generate(HRPObjectPlugin, "MESSAGE_BUFFER")]
+celltype tMessageBuffer{
+	[inline] entry	sMessageBuffer	eMessageBuffer;
+  
+	attr {
+		ID				id = C_EXP( "MBFID_$id$");
+		[omit] ATR		attribute = C_EXP("TA_NULL");
+		[omit] uint32_t	maxMessageSize;
+		[omit] uint32_t	bufferSize;
+		[omit] void		*messageBufferManagementBuffer = C_EXP("NULL");
+
+		[omit] ACPTN	accessPattern1 = C_EXP("OMIT");
+		[omit] ACPTN	accessPattern2 = C_EXP("OMIT");
+		[omit] ACPTN	accessPattern3 = C_EXP("OMIT");
+		[omit] ACPTN	accessPattern4 = C_EXP("OMIT");
+	};
+
+	FACTORY {
+		write("$ct$_factory.h", "#include \"kernel_cfg.h\"");
+	};
+};
+
+/*
+ *  固定長メモリメモリプール操作のシグニチャ（タスクコンテキスト用）
+ */
+[deviate]
+signature sFixedSizeMemoryPool {
+	ER 		get([out] void **p_block);
+	ER 		getPolling([out] void **p_block);
+	ER 		getTimeout([out] void **p_block, [in] TMO timeout);
+	ER 		release([in] const void *block);
+	ER 		initialize(void);
+	ER 		refer([out] T_RMPF *pk_fixedSizeMemoryPoolStatus);
+};
+
+/*
+ *  固定長メモリプールのセルタイプ
+ */
+[generate(HRPObjectPlugin, "FIXED_SIZE_MEMORYPOOL")]
+celltype tFixedSizeMemoryPool {
+	[inline] entry	sFixedSizeMemoryPool	eFixedSizeMemoryPool;
+
+	attr {
+		ID				id = C_EXP("MPFID_$id$");
+		[omit] ATR		attribute = C_EXP("TA_NULL");
+		[omit] uint_t	blockCount;
+		[omit] uint_t	blockSize;
+		[omit] MPF_T	*memoryPool = C_EXP("NULL");
+		[omit] void 	*memoryPoolManagementBuffer = C_EXP("NULL");
+
+		[omit] ACPTN	accessPattern1 = C_EXP("OMIT");
+		[omit] ACPTN	accessPattern2 = C_EXP("OMIT");
+		[omit] ACPTN	accessPattern3 = C_EXP("OMIT");
+		[omit] ACPTN	accessPattern4 = C_EXP("OMIT");
+	};
+
+	FACTORY {
+		write("$ct$_factory.h", "#include \"kernel_cfg.h\"");
+	};
+};
+
+/*
+ *  ハンドラ本体のシグニチャ
+ */
+[context("non-task")]
+signature siHandlerBody {
+	void	main(void);
+};
+
+/*
+ *  タイムイベントハンドラを指定するためのセルタイプ
+ */
+celltype tTimeEventHandler {
+	entry		siNotificationHandler	eiNotificationHandler;
+	[omit] call	siHandlerBody			ciHandlerBody;
+
+	FACTORY {
+		write("tecsgen.cfg", "#include \"$ct$_tecsgen.h\"");
+	};
+};
+
+/*
+ *  周期通知を操作するためのシグニチャ（タスクコンテキスト用）
+ *
+ *  周期通知はいずれかの保護ドメインに所属させなければならない．タイム
+ *  イベントハンドラを呼び出す場合には，カーネルドメインに所属させなけ
+ *  ればならない．
+ */
+signature sCyclic {
+	ER		start(void);
+	ER		stop(void);
+	ER		refer([out]T_RCYC *pk_cyclicHandlerStatus);
+};
+
+/*
+ *  周期通知のセルタイプ
+ */
+[active, generate(NotifierPlugin,
+	"factory=\"CRE_CYC({{id}}, { {{attribute}}, { {{_handler_params_}} }, "
+	"{{cycleTime}}, {{cyclePhase}} });\", output_file=tecsgen.cfg")]
+celltype tCyclicNotifier {
+	[inline] entry	sCyclic		eCyclic;
+
+	call			siNotificationHandler	ciNotificationHandler;
+	[optional] call siNotificationHandler	ciErrorNotificationHandler;
+
+	attr {
+		ID				id = C_EXP("CYCID_$id$");
+		[omit] ATR		attribute = C_EXP("TA_NULL");
+		[omit] bool_t	ignoreErrors = false;
+		[omit] RELTIM	cycleTime;
+		[omit] RELTIM	cyclePhase = 0;
+
+		/* 変数の設定による通知（TNFY_SETVAR）*/
+		[omit] intptr_t *setVariableAddress = 0;
+		[omit] intptr_t setVariableValue = 0;
+
+		/* 変数のインクリメントによる通知（TNFY_INCVAR）*/
+		[omit] intptr_t *incrementedVariableAddress = 0;
+
+		/* イベントフラグのセットによる通知（TNFY_SETFLG）*/
+		[omit] FLGPTN flagPattern = 0;
+
+		/* データキューへの送信による通知（TNFY_SNDDTQ）*/
+		[omit] intptr_t dataqueueSentValue = 0;
+
+		/* 変数の設定によるエラー通知（TENFY_SETVAR）*/
+		[omit] intptr_t *setVariableAddressForError = 0;
+
+		/* 変数のインクリメントによるエラー通知（TENFY_INCVAR）*/
+		[omit] intptr_t *incrementedVariableAddressForError = 0;
+
+		/* イベントフラグのセットによるエラー通知（TENFY_SETFLG）*/
+		[omit] FLGPTN flagPatternForError = 0;
+
+		[omit] ACPTN	accessPattern1 = C_EXP("OMIT");
+		[omit] ACPTN	accessPattern2 = C_EXP("OMIT");
+		[omit] ACPTN	accessPattern3 = C_EXP("OMIT");
+		[omit] ACPTN	accessPattern4 = C_EXP("OMIT");
+	};
+
+	FACTORY {
+		write("$ct$_factory.h", "#include \"kernel_cfg.h\"");
+	};
+};
+
+/*
+ *  周期通知にタイムイベントハンドラを指定するための複合セルタイプ
+ */
+[active]
+composite tCyclicHandler {
+	entry		sCyclic			eCyclic;
+	[omit] call	siHandlerBody	ciHandlerBody;
+
+	attr {
+		ID				id = C_EXP("CYCID_$id$");
+		[omit] ATR		attribute = C_EXP("TA_NULL");
+		[omit] RELTIM	cycleTime;
+		[omit] RELTIM	cyclePhase = 0;
+	};
+
+	cell tCyclicNotifier CyclicNotifier {
+		id = composite.id;
+		attribute = composite.attribute;
+		ciNotificationHandler = TimeEventHandler.eiNotificationHandler;
+		cycleTime = composite.cycleTime;
+		cyclePhase = composite.cyclePhase;
+	};
+
+	cell tTimeEventHandler TimeEventHandler {
+		ciHandlerBody => composite.ciHandlerBody;
+	};
+
+	eCyclic => CyclicNotifier.eCyclic;
+};
+
+/*
+ *  アラーム通知を操作するためのシグニチャ（タスクコンテキスト用）
+ */
+signature sAlarm {
+	ER		start([in] RELTIM alarmTime);
+	ER		stop(void);
+	ER		refer([out]T_RALM *pk_alarmStatus);
+};
+
+/*
+ *  アラーム通知を操作するためのシグニチャ（非タスクコンテキスト用）
+ */
+[context("non-task")]
+signature siAlarm {
+	ER		start([in] RELTIM alarmTime);
+	ER		stop(void);
+};
+
+/*
+ *  アラーム通知のセルタイプ
+ *
+ *  アラーム通知はいずれかの保護ドメインに所属させなければならない．タ
+ *  イムイベントハンドラを呼び出す場合には，カーネルドメインに所属させ
+ *  なければならない．
+ */
+[active, generate(NotifierPlugin,
+	"factory=\"CRE_ALM({{id}}, { {{attribute}}, {{{_handler_params_}}} });\", "
+	"output_file=tecsgen.cfg")]
+celltype tAlarmNotifier {
+	[inline] entry	sAlarm		eAlarm;
+	[inline] entry	siAlarm		eiAlarm;
+
+	call			siNotificationHandler	ciNotificationHandler;
+	[optional] call	siNotificationHandler	ciErrorNotificationHandler;
+
+	attr {
+		ID				id = C_EXP("ALMID_$id$");
+		[omit] ATR		attribute = C_EXP("TA_NULL");
+		[omit] bool_t	ignoreErrors = false;
+
+		/* 変数の設定による通知（TNFY_SETVAR）*/
+		[omit] intptr_t *setVariableAddress = 0;
+		[omit] intptr_t setVariableValue = 0;
+
+		/* 変数のインクリメントによる通知（TNFY_INCVAR）*/
+		[omit] intptr_t *incrementedVariableAddress = 0;
+
+		/* イベントフラグのセットによる通知（TNFY_SETFLG）*/
+		[omit] FLGPTN flagPattern = 0;
+
+		/* データキューへの送信による通知（TNFY_SNDDTQ）*/
+		[omit] intptr_t dataqueueSentValue = 0;
+
+		/* 変数の設定によるエラー通知（TENFY_SETVAR）*/
+		[omit] intptr_t *setVariableAddressForError = 0;
+
+		/* 変数のインクリメントによるエラー通知（TENFY_INCVAR）*/
+		[omit] intptr_t *incrementedVariableAddressForError = 0;
+
+		/* イベントフラグのセットによるエラー通知（TENFY_SETFLG）*/
+		[omit] FLGPTN flagPatternForError = 0;
+
+		[omit] ACPTN	accessPattern1 = C_EXP("OMIT");
+		[omit] ACPTN	accessPattern2 = C_EXP("OMIT");
+		[omit] ACPTN	accessPattern3 = C_EXP("OMIT");
+		[omit] ACPTN	accessPattern4 = C_EXP("OMIT");
+	};
+
+	FACTORY {
+		write("$ct$_factory.h", "#include \"kernel_cfg.h\"");
+	};
+};
+
+/*
+ *  アラーム通知にタイムイベントハンドラを指定するための複合セルタイプ
+ */
+[active]
+composite tAlarmHandler {
+	entry		sAlarm			eAlarm;
+	entry		siAlarm			eiAlarm;
+	[omit] call	siHandlerBody	ciHandlerBody;
+
+	attr {
+		ID			id = C_EXP("ALMID_$id$");
+		[omit] ATR	attribute = C_EXP("TA_NULL");
+	};
+
+	cell tAlarmNotifier AlarmNotifier {
+		id = composite.id;
+		attribute = composite.attribute;
+		ciNotificationHandler = TimeEventHandler.eiNotificationHandler;
+	};
+
+	cell tTimeEventHandler TimeEventHandler {
+		ciHandlerBody => composite.ciHandlerBody;
+	};
+
+	eAlarm => AlarmNotifier.eAlarm;
+	eiAlarm => AlarmNotifier.eiAlarm;
+};
+
+/*
+ *  割込み要求ライン操作のシグニチャ（タスクコンテキスト用）
+ */
+signature sInterruptRequest {
+	ER		disable(void);
+	ER		enable(void);
+	ER		clear(void);
+	ER		raise(void);
+	ER_BOOL	probe(void);
+};
+
+/*
+ *  割込み要求ラインのセルタイプ
+ *
+ *  割込み要求ラインはカーネルドメインに所属させなければならない．
+ */
+[generate(HRPHandlerPlugin, "CONFIG_INT")]
+celltype tInterruptRequest {
+	[inline] entry	sInterruptRequest	eInterruptRequest;
+
+	attr {
+		INTNO			interruptNumber;
+		[omit] ATR		attribute = C_EXP("TA_NULL");
+		[omit] PRI		interruptPriority;
+	};
+
+	/* 警告メッセージを抑止するための記述 */
+	factory {
+		write("tecsgen.cfg", "");
+	};
+};
+
+/*
+ *  割込みサービスルーチンのセルタイプ
+ *
+ *  割込みサービスルーチンはカーネルドメインに所属させなければならない．
+ *  HRP3カーネルでは，ISRに対するアクセス許可ベクタは使われないため，
+ *  accessPattern1〜accessPattern4は用意しない．
+ */
+[active, generate(HRPHandlerPlugin, "ISR")]
+celltype tISR {
+	call	siHandlerBody	ciISRBody;
+
+	attr {
+		ID				id = C_EXP("ISRID_$id$");
+		[omit] ATR		attribute = C_EXP("TA_NULL");
+		[omit] INTNO	interruptNumber;
+		[omit] PRI		isrPriority = 1;
+	};
+
+	FACTORY {
+		write("tecsgen.cfg", "#include \"$ct$_tecsgen.h\"");
+		write("$ct$_factory.h", "#include \"kernel_cfg.h\"");
+	};
+};
+
+/*
+ *  割込みハンドラのセルタイプ
+ *
+ *  割込みハンドラはカーネルドメインに所属させなければならない．
+ */
+[active, generate(HRPHandlerPlugin, "DEF_INH")]
+celltype tInterruptHandler {
+	call	siHandlerBody	ciInterruptHandlerBody;
+
+	attr {
+		[omit] INHNO	interruptHandlerNumber;
+		[omit] ATR		attribute = C_EXP("TA_NULL");
+	};
+
+	factory {
+		write("$ct$_tecsgen.h",
+				"#ifndef TOPPERS_MACRO_ONLY\n"
+				"extern void $id$_start(void);\n"
+				"#endif /* TOPPERS_MACRO_ONLY */\n");
+		write("$ct$.c",
+				"void $id$_start()\n"
+				"{\n"
+				"    CELLCB *p_cellcb = $cbp$;\n"
+				"    ciInterruptHandlerBody_main();\n"
+				"}\n");
+	};
+	FACTORY {
+		write("tecsgen.cfg", "#include \"$ct$_tecsgen.h\"");
+		write("$ct$.c", "#include \"$ct$_tecsgen.h\"");
+	};
+};
+
+/*
+ *  CPU例外ハンドラ本体のシグニチャ
+ */
+[context("non-task")]
+signature siCpuExceptionHandlerBody {
+	void	main([in] const void *p_excinf);
+};
+
+/*
+ *  CPU例外ハンドラのセルタイプ
+ *
+ *  CPU例外ハンドラはカーネルドメインに所属させなければならない．
+ */
+[active, generate(HRPHandlerPlugin, "DEF_EXC")]
+celltype tCpuExceptionHandler {
+	call	siCpuExceptionHandlerBody	ciCpuExceptionHandlerBody;
+
+	attr {
+		[omit] EXCNO	cpuExceptionHandlerNumber;
+		[omit] ATR		attribute = C_EXP("TA_NULL");
+	};
+
+	factory {
+		write("$ct$_tecsgen.h",
+				"#ifndef TOPPERS_MACRO_ONLY\n"
+				"extern void $id$_start(void *p_excinf);\n"
+				"#endif /* TOPPERS_MACRO_ONLY */\n");
+		write("$ct$.c",
+				"void $id$_start(void *p_excinf)\n"
+				"{\n"
+				"    CELLCB *p_cellcb = $cbp$;\n"
+				"    ciCpuExceptionHandlerBody_main(p_excinf);\n"
+				"}\n");
+	};
+	FACTORY {
+		write("tecsgen.cfg", "#include \"$ct$_tecsgen.h\"");
+		write("$ct$.c", "#include \"$ct$_tecsgen.h\"");
+	};
+};
+
+/*
+ *  初期化／終了処理ルーチン本体のシグニチャ
+ */
+signature sRoutineBody {
+	void	main(void);
+};
+
+/*
+ *  初期化ルーチンのセルタイプ
+ *
+ *  初期化ルーチンはカーネルドメインに所属させなければならない．
+ */
+[active, generate(HRPHandlerPlugin, "INIT_ROUTINE")]
+celltype tInitializeRoutine {
+	call	sRoutineBody	cInitializeRoutineBody;
+
+	attr {
+		[omit] ATR		attribute = C_EXP("TA_NULL");
+	};
+
+	FACTORY {
+		write("tecsgen.cfg", "#include \"$ct$_tecsgen.h\"");
+	};
+};
+
+/*
+ *  終了処理ルーチンのセルタイプ
+ *
+ *  終了処理ルーチンはカーネルドメインに所属させなければならない．
+ */
+[active, generate(HRPHandlerPlugin, "TERM_ROUTINE")]
+celltype tTerminateRoutine {
+	call	sRoutineBody	cTerminateRoutineBody;
+
+	attr {
+		[omit] ATR		attribute = C_EXP("TA_NULL");
+	};
+
+	FACTORY {
+		write("tecsgen.cfg", "#include \"$ct$_tecsgen.h\"");
+	};
+};

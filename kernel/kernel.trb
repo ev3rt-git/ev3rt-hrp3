@@ -1,0 +1,883 @@
+# -*- coding: utf-8 -*-
+#
+#   TOPPERS/HRP Kernel
+#       Toyohashi Open Platform for Embedded Real-Time Systems/
+#       High Reliable system Profile Kernel
+# 
+#   Copyright (C) 2015 by FUJI SOFT INCORPORATED, JAPAN
+#   Copyright (C) 2015-2019 by Embedded and Real-Time Systems Laboratory
+#               Graduate School of Information Science, Nagoya Univ., JAPAN
+# 
+#   上記著作権者は，以下の(1)〜(4)の条件を満たす場合に限り，本ソフトウェ
+#   ア（本ソフトウェアを改変したものを含む．以下同じ）を使用・複製・改
+#   変・再配布（以下，利用と呼ぶ）することを無償で許諾する．
+#   (1) 本ソフトウェアをソースコードの形で利用する場合には，上記の著作
+#       権表示，この利用条件および下記の無保証規定が，そのままの形でソー
+#       スコード中に含まれていること．
+#   (2) 本ソフトウェアを，ライブラリ形式など，他のソフトウェア開発に使
+#       用できる形で再配布する場合には，再配布に伴うドキュメント（利用
+#       者マニュアルなど）に，上記の著作権表示，この利用条件および下記
+#       の無保証規定を掲載すること．
+#   (3) 本ソフトウェアを，機器に組み込むなど，他のソフトウェア開発に使
+#       用できない形で再配布する場合には，次のいずれかの条件を満たすこ
+#       と．
+#     (a) 再配布に伴うドキュメント（利用者マニュアルなど）に，上記の著
+#         作権表示，この利用条件および下記の無保証規定を掲載すること．
+#     (b) 再配布の形態を，別に定める方法によって，TOPPERSプロジェクトに
+#         報告すること．
+#   (4) 本ソフトウェアの利用により直接的または間接的に生じるいかなる損
+#       害からも，上記著作権者およびTOPPERSプロジェクトを免責すること．
+#       また，本ソフトウェアのユーザまたはエンドユーザからのいかなる理
+#       由に基づく請求からも，上記著作権者およびTOPPERSプロジェクトを
+#       免責すること．
+# 
+#   本ソフトウェアは，無保証で提供されているものである．上記著作権者お
+#   よびTOPPERSプロジェクトは，本ソフトウェアに関して，特定の使用目的
+#   に対する適合性も含めて，いかなる保証も行わない．また，本ソフトウェ
+#   アの利用により直接的または間接的に生じたいかなる損害に関しても，そ
+#   の責任を負わない．
+# 
+#   $Id: kernel.trb 665 2019-02-03 17:06:18Z ertl-hiro $
+# 
+
+#
+#		コンフィギュレータのパス2の生成スクリプト
+#
+
+#
+#   メモリ配置に関するマクロ定義のチェック
+#
+if $TOPPERS_ML_AUTO && $TOPPERS_ML_MANUAL
+  error_exit("Both TOPPERS_ML_AUTO and TOPPERS_ML_MANUAL are defined.")
+elsif !$TOPPERS_ML_AUTO && !$TOPPERS_ML_MANUAL
+  error_exit("Neither TOPPERS_ML_AUTO nor TOPPERS_ML_MANUAL is defined.")
+end
+
+#
+#  共通部の読込み
+#
+IncludeTrb("kernel/kernel_lib.trb")
+
+#
+#  タイムスタンプファイルの指定
+#
+$timeStampFileName = "kernel_cfg.timestamp"
+
+#
+#  kernel_cfg.hの先頭部分の生成
+#
+$kernelCfgH = GenFile.new("kernel_cfg.h")
+$kernelCfgH.add(<<EOS)
+/* kernel_cfg.h */
+#ifndef TOPPERS_KERNEL_CFG_H
+#define TOPPERS_KERNEL_CFG_H
+EOS
+
+#
+#  kernel_cfg.cの先頭部分の生成
+#
+$kernelCfgC = GenFile.new("kernel_cfg.c")
+$kernelCfgC.add("/* kernel_cfg.c */")
+GenerateCFileHeader($kernelCfgC)
+
+if $TOPPERS_ML_AUTO
+  #
+  #  kernel_mem2.cの先頭部分の生成
+  #
+  $kernelMemC = GenFile.new("kernel_mem2.c")
+  $kernelMemC.add("/* kernel_mem2.c */")
+else
+  #
+  #  kernel_mem.cの先頭部分の生成
+  #
+  $kernelMemC = GenFile.new("kernel_mem.c")
+  $kernelMemC.add("/* kernel_mem.c */")
+end
+GenerateCFileHeader($kernelMemC)
+
+#
+#  スタック領域の確保関数
+#
+#  スタック領域の定義分と，スタック領域のサイズ記述を配列で返す．
+#
+unless defined? AllocSystemStack()
+  def AllocSystemStack(stack, size)
+    # 大きい方に丸めたサイズで確保する［NGKI1050］［NGKI3220］
+    $kernelCfgC.add("static STK_T #{stack}[COUNT_STK_T(#{size})];")
+    return("ROUND_STK_T(#{size})")
+  end
+end
+
+#
+#  カーネルオブジェクトに関する情報の生成（仮想クラス）
+#
+class KernelObject
+  def initialize(obj, object, within_domain = false, obj_s = obj)
+    @obj = obj
+    @OBJ = obj.tr("a-z", "A-Z")
+    @object = object
+    @obj_s = obj_s
+    @OBJ_S = obj_s.tr("a-z", "A-Z")
+    @objid = (obj + "id").to_sym
+    @noobj = ("no" + obj).to_sym
+    @tnum_aobjid = ("tnum_a" + obj + "id").to_sym
+    @api = "CRE_#{@OBJ}".to_sym
+    @aidapi = "AID_#{@OBJ}".to_sym
+    @sacapi = "SAC_#{@OBJ}".to_sym
+    @inibList = { "#{@OBJ_S}INIB" => "a#{@obj_s}inib_table"}
+    @within_domain = within_domain
+  end
+
+  def generate()
+    # AID_@OBJの処理
+    numAutoObjid = 0
+    $cfgData[@aidapi].each do |_, params|
+      # 事前準備（エラーチェック）
+      if @within_domain
+        # 保護ドメインの囲みの中に記述されていない場合（E_RSATR）
+        # ［NGKI3979］［NGKI3980］［NGKI3981］
+        if !params.has_key?(:domain) || params[:domain] == $TDOM_NONE
+          error_ercd("E_RSATR", params, \
+							"#{@api} must be within a protection domain")
+          # 以降のエラーの抑止
+          params[:domain] = $TDOM_KERNEL
+        end
+      else
+        # 保護ドメインの囲みの中に記述されていない場合は無所属とする
+        params[:domain] ||= $TDOM_NONE
+      end
+
+      # 割り付け可能なオブジェクト数のカウント
+      numAutoObjid += params[@noobj]
+      if @OBJ != 'ISR' # TODO: workaround for AID_ISR
+        $domData[params[:domain]][@tnum_aobjid] += params[@noobj]
+      end
+    end
+    numObjid = $cfgData[@api].size + numAutoObjid
+
+    # kernel_cfg.hの生成
+    $kernelCfgH.add("#define TNUM_#{@OBJ}ID\t#{numObjid}")
+
+    # オブジェクトのID番号のマクロ定義の生成
+    $cfgData[@api].sort.each do |_, params|
+      $kernelCfgH.add("#define #{params[@objid]}\t#{params[@objid].val}")
+    end
+    $kernelCfgH.add()
+
+    # オブジェクトのID番号を保持する変数
+    if $USE_EXTERNAL_ID
+      $cfgData[@api].sort.each do |_, params|
+        $kernelCfgC.add("const ID #{params[@objid]}_id" \
+										" = #{params[@objid].val};")
+      end
+      $kernelCfgC.add()
+    end
+
+    # 静的に生成されたオブジェクトの数
+    $kernelCfgC.add("#define TNUM_S#{@OBJ}ID\t#{$cfgData[@api].size}")
+
+    # オブジェクトID番号の最大値
+    $kernelCfgC.add("const ID _kernel_tmax_#{@obj}id" \
+							" = (TMIN_#{@OBJ}ID + TNUM_#{@OBJ}ID - 1);")
+    $kernelCfgC.add2("const ID _kernel_tmax_s#{@obj}id" \
+							" = (TMIN_#{@OBJ}ID + TNUM_S#{@OBJ}ID - 1);")
+
+    # データ構造
+    if $cfgData[@api].size > 0
+      # 事前準備（エラーチェック，メモリ領域の生成）
+      $cfgData[@api].sort.each do |key, params|
+        # 保護ドメインのチェック
+        if @within_domain
+          # 保護ドメインの囲みの中に記述されていない場合（E_RSATR）
+          # ［NGKI1030］［NGKI3741］［NGKI3742］
+          if !params.has_key?(:domain) || params[:domain] == $TDOM_NONE
+            error_ercd("E_RSATR", params, "#{@api} of %#{@objid} " \
+										"must be within a protection domain")
+            # 以降のエラーの抑止
+            params[:domain] = $TDOM_KERNEL
+          end
+        else
+          # 保護ドメインの囲みの中に記述されていない場合は無所属とする
+          params[:domain] ||= $TDOM_NONE
+        end
+
+        # カーネルオブジェクト毎の事前準備
+        prepare(key, params)
+      end
+
+      # SAC_OBJに関する事前準備（エラーチェック，情報の生成）
+      if $cfgData.has_key?(@sacapi)
+        $cfgData[@api].sort.each do |key, params|
+          if $cfgData[@sacapi].has_key?(key)
+            params2 = $cfgData[@sacapi][key]
+            params2[:domain] ||= $TDOM_NONE
+
+            # SAC_OBJがCRE_OBJと異なる保護ドメインに属する場合（E_RSATR）
+            # ［NGKI1083］［NGKI1478］［NGKI1581］［NGKI1698］［NGKI1835］
+            # ［NGKI2047］［NGKI3336］［NGKI2267］［NGKI3732］［NGKI3740］
+            if params2[:domain] != params[:domain]
+              error_ercd("E_RSATR", params2,
+							"#{@sacapi} of %#{@objid} must be " \
+							"within the same protection domain with #{@api}")
+            end
+
+            params[:acptn1] = params2[:acptn1]
+            params[:acptn2] = params2[:acptn2]
+            params[:acptn3] = params2[:acptn3]
+            params[:acptn4] = params2[:acptn4]
+          else
+            # SAC_OBJがない場合のデフォルト値の設定［NGKI0613］［NGKI0614］
+            # ［NGKI0615］［NGKI0616］
+            params[:acptn1] = $defaultAcptn[params[:domain]]
+            params[:acptn2] = $defaultAcptn[params[:domain]]
+            params[:acptn3] = $domData[params[:domain]][:acptn1]
+            params[:acptn4] = $defaultAcptn[params[:domain]]
+          end
+        end
+      end
+
+      # オブジェクト全体に対して必要なメモリ領域の生成（オプション）
+      if respond_to?(:generateData)
+        generateData()
+      end
+
+      # オブジェクト初期化ブロックの生成
+      $kernelCfgC.add("const #{@OBJ_S}INIB _kernel_#{@obj_s}inib_table" \
+													"[TNUM_S#{@OBJ}ID] = {")
+      $cfgData[@api].sort.each_with_index do |(key, params), index|
+        $kernelCfgC.add(",") if index > 0
+        $kernelCfgC.append("\t{ " + generateInib(key, params) + " }")
+      end
+      $kernelCfgC.add
+      $kernelCfgC.add2("};")
+    else
+      $kernelCfgC.add2("TOPPERS_EMPTY_LABEL(const #{@OBJ_S}INIB, " \
+										"_kernel_#{@obj_s}inib_table);")
+    end
+
+    # 動的生成オブジェクト用のオブジェクト初期化ブロック
+    @inibList.each do |type, array|
+      if numAutoObjid > 0
+        $kernelCfgC.add2("#{type} _kernel_#{array}[#{numAutoObjid}];")
+      else
+        $kernelCfgC.add2("TOPPERS_EMPTY_LABEL(#{type}, _kernel_#{array});")
+      end
+    end
+
+    if numObjid > 0
+      # オブジェクト管理ブロックの生成
+      $kernelCfgC.add2("#{@OBJ_S}CB _kernel_#{@obj_s}cb_table" \
+													"[TNUM_#{@OBJ}ID];")
+
+      # オブジェクト初期化関数の追加
+      $initializeFunctions.push("_kernel_initialize_#{@object}();")
+    else
+      $kernelCfgC.add2("TOPPERS_EMPTY_LABEL(#{@OBJ_S}CB, " \
+										"_kernel_#{@obj_s}cb_table);")
+    end
+  end
+end
+
+#
+#  通知ハンドラの生成関数
+#
+def generateNotifyHandler(key, params, objid)
+  # パラメータを変数に格納
+  nfymode = params[:nfymode]
+  nfymode1 = nfymode & 0x0f
+  nfymode2 = nfymode & ~0x0f
+  # par1 = params[:par1]
+  par2 = params[:par2]
+
+  # 通知処理のパラメータ数による補正処理
+  if nfymode == $TNFY_HANDLER || nfymode1 == $TNFY_SETVAR \
+								|| nfymode1 == $TNFY_SETFLG \
+								|| nfymode1 == $TNFY_SNDDTQ
+    # 通知処理のパラメータが2つの場合
+    numpar = 2
+    epar1 = params[:par3]
+    epar2 = params[:par4]
+  else
+    # 通知処理のパラメータが1つの場合
+    numpar = 1
+    epar1 = params[:par2]
+    epar2 = params[:par3]
+  end
+
+  # パラメータ数のチェック
+  if (numpar == 2 && par2.nil?) || (nfymode2 != 0 && epar1.nil?) \
+								|| (nfymode2 == $TENFY_SETFLG && epar2.nil?)
+    # パラメータが足りない場合
+    error_api(params, "too few parameters for nfymode `#{nfymode}' " \
+											"in %apiname of %#{objid}")
+  elsif (nfymode2 == 0 && !epar1.nil?) \
+					|| (nfymode2 != $TENFY_SETFLG && !epar2.nil?)
+    # パラメータが多すぎる場合
+    error_api(params, "too many parameters for nfymode `#{nfymode}' " \
+											"in %apiname of %#{objid}")
+  elsif nfymode1 == $TNFY_HANDLER && nfymode2 == 0		#［NGKI3721］
+    # タイムイベントハンドラの呼出し
+    funcname = "(NFYHDR)(#{par2})"
+
+    # カーネルドメインに属していない場合［NGKI3695］
+    if !params.has_key?(:domain) || params[:domain] != $TDOM_KERNEL
+      error_ercd("E_OACV", params, "nfymode `#{nfymode}' is not permitted " \
+								"in user domains in %apiname of %#{objid}")
+    end
+  else
+    # 通知ハンドラの関数名
+    funcname = "_kernel_nfyhdr_#{params[objid]}"
+
+    # エラー通知のための変数のアドレスとオブジェクトIDを格納する
+    # 変数の生成（エラーチェックのために必要）
+    if nfymode2 == $TENFY_SETVAR || nfymode2 == $TENFY_INCVAR
+      $kernelCfgC.add2("intptr_t *const #{funcname}_p_evar =" \
+											" (intptr_t *)(#{epar1});")
+    elsif nfymode2 == $TENFY_ACTTSK || nfymode2 == $TENFY_WUPTSK
+      $kernelCfgC.add2("const ID #{funcname}_etskid = #{epar1};")
+    elsif nfymode2 == $TENFY_SIGSEM
+      $kernelCfgC.add2("const ID #{funcname}_esemid = #{epar1};")
+    elsif nfymode2 == $TENFY_SETFLG
+      $kernelCfgC.add2("const ID #{funcname}_eflgid = #{epar1};")
+    elsif nfymode2 == $TENFY_SNDDTQ
+      $kernelCfgC.add2("const ID #{funcname}_edtqid = #{epar1};")
+    end
+
+    # 関数の先頭部分の生成
+    $kernelCfgC.add("static void")
+    $kernelCfgC.add("#{funcname}(intptr_t exinf)")
+    $kernelCfgC.add("{")
+
+    if nfymode2 == 0
+      # エラー通知がない場合
+      errorCode = "(void) "
+    else
+      # エラー通知がある場合
+      $kernelCfgC.add2("\tER\tercd;")
+      errorCode = "ercd = "
+    end
+
+    # イベント通知処理の処理
+    if nfymode1 == $TNFY_SETVAR && nfymode2 == 0		#［NGKI3721］
+      # 変数の設定
+      $kernelCfgC.add("\t*((intptr_t *) exinf) = (#{par2});")
+    elsif nfymode1 == $TNFY_INCVAR && nfymode2 == 0		#［NGKI3721］
+      # 変数のインクリメント
+      $kernelCfgC.add("\t(void) loc_cpu();")
+      $kernelCfgC.add("\t*((intptr_t *) exinf) += 1;")
+      $kernelCfgC.add("\t(void) unl_cpu();")
+    elsif nfymode1 == $TNFY_ACTTSK
+      # タスクの起動
+      $kernelCfgC.add("\t#{errorCode}act_tsk((ID) exinf);")
+    elsif nfymode1 == $TNFY_WUPTSK
+      # タスクの起床
+      $kernelCfgC.add("\t#{errorCode}wup_tsk((ID) exinf);")
+    elsif nfymode1 == $TNFY_SIGSEM
+      # セマフォの返却
+      $kernelCfgC.add("\t#{errorCode}sig_sem((ID) exinf);")
+    elsif nfymode1 == $TNFY_SETFLG
+      # イベントフラグのセット
+      $kernelCfgC.add("\t#{errorCode}set_flg(((ID) exinf), #{par2});")
+    elsif nfymode1 == $TNFY_SNDDTQ
+      # データキューへの送信
+      $kernelCfgC.add("\t#{errorCode}psnd_dtq(((ID) exinf), #{par2});")
+    else
+      # nfymodeの値が正しくない場合（E_PAR）［NGKI3730］
+      error_illegal_id("E_PAR", params, :nfymode, objid)
+    end
+
+    if nfymode2 != 0
+      # エラー通知処理の処理
+      $kernelCfgC.add("\tif (ercd != E_OK) {")
+
+
+      if nfymode2 == $TENFY_SETVAR
+        # 変数の設定
+        $kernelCfgC.add("\t\t*#{funcname}_p_evar = (intptr_t) ercd;")
+      elsif nfymode2 == $TENFY_INCVAR
+        # 変数のインクリメント
+        $kernelCfgC.add("\t\t(void) loc_cpu();")
+        $kernelCfgC.add("\t\t*#{funcname}_p_evar += 1;")
+        $kernelCfgC.add("\t\t(void) unl_cpu();")
+      elsif nfymode2 == $TENFY_ACTTSK
+        # タスクの起動
+        $kernelCfgC.add("\t\t(void) act_tsk(#{funcname}_etskid);")
+      elsif nfymode2 == $TENFY_WUPTSK
+        # タスクの起床
+        $kernelCfgC.add("\t\t(void) wup_tsk(#{funcname}_etskid);")
+      elsif nfymode2 == $TENFY_SIGSEM
+        # セマフォの返却
+        $kernelCfgC.add("\t\t(void) sig_sem(#{funcname}_esemid);")
+      elsif nfymode2 == $TENFY_SETFLG
+        # イベントフラグのセット
+        $kernelCfgC.add("\t\t(void) set_flg(#{funcname}_eflgid, #{epar2});")
+      elsif nfymode2 == $TENFY_SNDDTQ
+        # データキューへの送信
+        $kernelCfgC.add("\t\t(void) psnd_dtq(#{funcname}_edtqid," \
+													" (intptr_t) ercd);")
+      else
+        # nfymodeの値が正しくない場合（E_PAR）［NGKI3730］
+        error_illegal_id("E_PAR", params, :nfymode, objid)
+      end
+      $kernelCfgC.add("\t}")
+    end
+
+    # 関数の末尾部分の生成
+    $kernelCfgC.add2("}")
+  end
+  return(funcname)
+end
+
+#
+#  保護ドメインに関する前処理
+#
+IncludeTrb("kernel/domain_prep.trb")
+
+#
+#  メモリオブジェクトに関する前処理
+#
+IncludeTrb("kernel/memory_prep.trb")
+
+#
+#  タイムイベント管理
+#
+$kernelCfgC.comment_header("Time Event Management")
+
+# タイムイベントヒープ領域の生成
+if $cfgData[:DEF_SCY].size == 0
+  $kernelCfgC.add(<<EOS)
+TMEVTN	_kernel_tmevt_heap_kernel[1 + TNUM_TSKID + TNUM_CYCID + TNUM_ALMID];
+TOPPERS_EMPTY_LABEL(TMEVTN, _kernel_tmevt_heap_idle);
+EOS
+else
+  tmevtCount = $domData[$TDOM_KERNEL][:tmevtCount]
+  $kernelCfgC.add("TMEVTN\t_kernel_tmevt_heap_kernel[1 + #{tmevtCount}];");
+
+  tmevtCount = 0
+  $udomainList.each do |key|
+    params = $domData[key]
+    if $schedcbList.has_key?(key)
+      $kernelCfgC.add("TMEVTN\t_kernel_tmevt_heap_#{params[:domid]}" \
+										"[1 + #{params[:tmevtCount]}];");
+    else
+      tmevtCount += params[:tmevtCount]
+    end
+  end
+  $kernelCfgC.add2("TMEVTN\t_kernel_tmevt_heap_idle[1 + #{tmevtCount}];");
+end
+
+#
+#  各機能モジュールのコンフィギュレーション
+#
+$initializeFunctions = []
+IncludeTrb("kernel/task.trb")
+IncludeTrb("kernel/semaphore.trb")
+IncludeTrb("kernel/eventflag.trb")
+IncludeTrb("kernel/dataqueue.trb")
+IncludeTrb("kernel/pridataq.trb")
+IncludeTrb("kernel/mutex.trb")
+IncludeTrb("kernel/messagebuf.trb")
+IncludeTrb("kernel/mempfix.trb")
+IncludeTrb("kernel/cyclic.trb")
+IncludeTrb("kernel/alarm.trb")
+IncludeTrb("kernel/interrupt.trb")
+IncludeTrb("kernel/exception.trb")
+IncludeTrb("kernel/svc_manage.trb")
+
+#
+#  システム状態に対するアクセス許可ベクタ
+#
+$kernelCfgC.comment_header("Access Permission Vector")
+
+$kernelCfgC.append("const ACVCT _kernel_sysstat_acvct = ")
+if $cfgData[:SAC_SYS].size == 0
+  # SAC_SYSがない場合のデフォルト値の設定［NGKI0426］
+  $kernelCfgC.append("{ TACP_KERNEL, TACP_KERNEL, TACP_KERNEL, TACP_KERNEL }")
+else
+  # 静的API「SAC_SYS」が複数ある場合（E_OBJ）［NGKI2677］
+  if $cfgData[:SAC_SYS].size > 1
+    error("E_OBJ: too many SAC_SYS")
+  end
+
+  # SAC_SYSがある場合の処理
+  params0 = $cfgData[:SAC_SYS][1]
+
+  # カーネルドメインの囲みの中に記述されていない場合（E_RSATR）［NGKI2674］
+  if !params0.has_key?(:domain) || params0[:domain] != $TDOM_KERNEL
+    error_ercd("E_RSATR", params0, "%apiname must be within the kernel domain")
+  end
+
+  $kernelCfgC.append(GenerateAcvct(params0))
+end
+$kernelCfgC.add2(";")
+
+#
+#  非タスクコンテキスト用のスタック領域
+#
+$kernelCfgC.comment_header("Stack Area for Non-task Context")
+
+if $cfgData[:DEF_ICS].size == 0
+  # DEF_ICSがない場合のデフォルト値の設定
+  if !defined?($DEFAULT_ISTK)
+    # スタック領域の自動割付け
+    istksz = AllocSystemStack("_kernel_istack", "DEFAULT_ISTKSZ")
+    istk = "_kernel_istack"
+  else
+    istksz = "DEFAULT_ISTKSZ"
+    istk = "DEFAULT_ISTK"
+  end
+else
+  # 静的API「DEF_ICS」が複数ある場合（E_OBJ）［NGKI3216］
+  if $cfgData[:DEF_ICS].size > 1
+    error("E_OBJ: too many DEF_ICS")
+  end
+
+  # DEF_ICSがある場合の処理
+  params0 = $cfgData[:DEF_ICS][1]
+
+  # パラメータが省略された時のデフォルト値の設定
+  params0[:istk] ||= "NULL"
+
+  # カーネルドメインの囲みの中に記述されていない場合（E_RSATR）［NGKI3213］
+  if !params0.has_key?(:domain) || params0[:domain] != $TDOM_KERNEL
+    error_ercd("E_RSATR", params0, "%apiname must be within the kernel domain")
+  end
+
+  # istkszがターゲット定義の最小値（TARGET_MIN_ISTKSZ，未定義の場合は1）
+  # よりも小さい場合（E_PAR）［NGKI3254］
+  if params0[:istksz] < $TARGET_MIN_ISTKSZ
+    error_wrong("E_PAR", params0, :istksz, "too small")
+  end
+
+  if params0[:istk] == "NULL"
+    # スタック領域の自動割付け
+    istksz = AllocSystemStack("_kernel_istack", params0[:istksz])
+    istk = "_kernel_istack"
+  else
+    # istkszがターゲット定義の制約に合致しない場合（E_PAR）［NGKI3222］
+    if (params0[:istksz] & ($CHECK_SSTKSZ_ALIGN - 1)) != 0
+      error_wrong("E_PAR", params0, :istksz, "not aligned")
+    end
+
+    istksz = "(#{params0[:istksz]})"
+    istk = "(void *)(#{params0[:istk]})"
+  end
+end
+
+$kernelCfgC.add(<<EOS)
+const size_t _kernel_istksz = #{istksz};
+STK_T *const _kernel_istk = #{istk};
+
+#ifdef TOPPERS_ISTKPT
+STK_T *const _kernel_istkpt = TOPPERS_ISTKPT(#{istk}, #{istksz});
+#endif /* TOPPERS_ISTKPT */
+EOS
+
+#
+#  カーネルメモリプール領域
+#
+$kernelCfgC.comment_header("Kernel Memory Pool Area")
+
+$cfgData[:DEF_MPK].each do |key, params|
+  # 保護ドメインの囲みの中に記述されていない場合は無所属とする
+  params[:domain] ||= $TDOM_NONE
+
+  # 保護ドメイン中に複数のDEF_MPKがある場合（E_OBJ）［NGKI5073］
+  $cfgData[:DEF_MPK].each do |key2, params2|
+    break if key2 == key
+    if params2[:domain] == params[:domain]
+      error_ercd("E_OBJ", params, \
+						"%apiname is duplicated in a protection domain")
+    end
+  end
+
+  # パラメータが省略された時のデフォルト値の設定
+  params[:mpk] ||= "NULL"
+
+  # mpkszが0の場合（E_PAR）［NGKI5071］
+  if params[:mpksz] == 0
+    error_wrong("E_PAR", params, :mpksz, "zero")
+  end
+
+  if params[:mpk] == "NULL"
+    # カーネルメモリプール領域の自動割付け
+    $kernelCfgC.add("static MB_T _kernel_memory_pool" \
+						"_#{$domData[params[:domain]][:label]}" \
+						"[COUNT_MB_T(#{params[:mpksz]})];")
+    mpksz = "ROUND_MB_T(#{params[:mpksz]})"
+    mpk = "_kernel_memory_pool_#{$domData[params[:domain]][:label]}"
+  else
+    # mpkszがターゲット定義の制約に合致しない場合（E_PAR）［NGKI5083］
+    if (params[:mpksz] & ($CHECK_MB_ALIGN - 1)) != 0
+      error_wrong("E_PAR", params, :mpksz, "not aligned")
+    end
+
+    mpksz = "(#{params[:mpksz]})"
+    mpk = "(void *)(#{params[:mpk]})"
+  end
+
+  # DEF_MPKのデータを$domDataに取り込む
+  $domData[params[:domain]][:mpksz] = mpksz
+  $domData[params[:domain]][:mpk] = mpk
+end
+$kernelCfgC.add()
+
+# DEF_MPKがない時のデフォルト値の設定
+$domData.each do |_, params|
+  params[:mpksz] ||= "0"
+  params[:mpk] ||= "NULL"
+end
+
+#
+#  各モジュールの初期化関数
+#
+$kernelCfgC.comment_header("Module Initialization Function")
+$kernelCfgC.append(<<EOS)
+void
+_kernel_initialize_object(void)
+{
+EOS
+$initializeFunctions.each do |func|
+  $kernelCfgC.add("\t#{func}")
+end
+$kernelCfgC.add2("}")
+
+#
+#  初期化ルーチン機能
+#
+
+# kernel_cfg.hの生成
+$kernelCfgH.add2("#define TNUM_INIRTN\t#{$cfgData[:ATT_INI].size}")
+
+# kernel_cfg.cの生成
+$kernelCfgC.comment_header("Initialization Routine")
+
+# エラーチェック
+$cfgData[:ATT_INI].each do |_, params|
+  # カーネルドメインの囲みの中に記述されていない場合（E_RSATR）［NGKI3242］
+  if !params.has_key?(:domain) || params[:domain] != $TDOM_KERNEL
+    error_ercd("E_RSATR", params, "%apiname must be within the kernel domain")
+  end
+
+  # iniatrが無効の場合（E_RSATR）［NGKI3241］［NGKI3202］［NGKI3203］
+  #（TA_NULLでない場合）
+  if (params[:iniatr] != $TA_NULL)
+    error_illegal_sym("E_RSATR", params, :iniatr, :inirtn)
+  end
+end
+
+# 初期化ルーチンの数の定義
+$kernelCfgC.add2("const uint_t _kernel_tnum_inirtn = TNUM_INIRTN;");
+
+# 初期化ルーチンテーブルの生成
+if $cfgData[:ATT_INI].size > 0
+  $kernelCfgC.add("const INIRTNB _kernel_inirtnb_table[TNUM_INIRTN] = {")
+  $cfgData[:ATT_INI].each_with_index do |(_, params), index|
+    $kernelCfgC.add(",") if index > 0
+    $kernelCfgC.append("\t{ (INIRTN)(#{params[:inirtn]}), " \
+								"(intptr_t)(#{params[:exinf]}) }")
+  end
+  $kernelCfgC.add
+  $kernelCfgC.add2("};")
+else
+  $kernelCfgC.add2("TOPPERS_EMPTY_LABEL(const INIRTNB, " \
+										"_kernel_inirtnb_table);")
+end
+
+#
+#  終了処理ルーチン機能
+#
+
+# kernel_cfg.hの生成
+$kernelCfgH.add2("#define TNUM_TERRTN\t#{$cfgData[:ATT_TER].size}")
+
+# kernel_cfg.cの生成
+$kernelCfgC.comment_header("Termination Routine")
+
+# エラーチェック
+$cfgData[:ATT_TER].each do |_, params|
+  # カーネルドメインの囲みの中に記述されていない場合（E_RSATR）［NGKI3249］
+  if !params.has_key?(:domain) || params[:domain] != $TDOM_KERNEL
+    error_ercd("E_RSATR", params, "%apiname must be within the kernel domain")
+  end
+
+  # teratrが無効の場合（E_RSATR）［NGKI3248］［NGKI3208］［NGKI3209］
+  #（TA_NULLでない場合）
+  if (params[:teratr] != $TA_NULL)
+    error_illegal_sym("E_RSATR", params, :teratr, :terrtn)
+  end
+end
+
+# 終了処理ルーチンの数の定義
+$kernelCfgC.add2("const uint_t _kernel_tnum_terrtn = TNUM_TERRTN;");
+
+# 終了処理ルーチンテーブルの生成
+if $cfgData[:ATT_TER].size > 0
+  $kernelCfgC.add("const TERRTNB _kernel_terrtnb_table[TNUM_TERRTN] = {")
+  $cfgData[:ATT_TER].reverse_each.each_with_index do |(_, params), index|
+    $kernelCfgC.add(",") if index > 0
+    $kernelCfgC.append("\t{ (TERRTN)(#{params[:terrtn]}), " \
+								"(intptr_t)(#{params[:exinf]}) }")
+  end
+  $kernelCfgC.add
+  $kernelCfgC.add2("};")
+else
+  $kernelCfgC.add2("TOPPERS_EMPTY_LABEL(const TERRTNB, " \
+										"_kernel_terrtnb_table);")
+end
+
+#
+#  保護ドメイン管理機能
+#
+IncludeTrb("kernel/domain.trb")
+
+#
+#  メモリオブジェクト管理機能
+#
+if $TOPPERS_ML_AUTO
+  #
+  #  自動メモリ配置の場合
+  #
+
+  #
+  #  メモリオブジェクトに関するコンフィギュレーション
+  #
+  IncludeTrb("kernel/memory.trb")
+
+  #
+  #  仮のメモリ構成・初期化ファイルの生成
+  #
+  $kernelMemC.comment_header("Memory Object Management Functions")
+
+  #
+  #  仮メモリオブジェクト初期化ブロックの生成
+  #
+  if !$OMIT_STANDARD_MEMINIB
+    # メモリオブジェクト初期化ブロックのサイズの算出
+    # アドレス0を置く領域
+    $meminibSize = 1
+
+    $memObjList.each do |key|
+      params = $memObj[key]
+
+      # メモリオブジェクトの先頭番地を置く領域
+      $meminibSize += 1
+
+      if !params[:linker]
+        # リンカが配置しないメモリオブジェクトは最終番地も必要
+        $meminibSize += 1
+      elsif $memObj[params[:moLast]][:MEMREG_LAST]
+        # メモリリージョンの最後のメモリオブジェクトは最終番地も必要
+        $meminibSize += 1
+      end
+    end
+
+    # ターゲット依存で$meminibSizeを補正する場合
+    if defined? TargetCalcMeminibSize()
+      $meminibSize = TargetCalcMeminibSize($meminibSize)
+    end
+
+    # 仮メモリオブジェクト初期化ブロックの生成
+    $globalVars.push("meminibSize")
+    GenerateTentativeMeminib()
+  end
+
+  #
+  #  仮dataセクション初期化ブロックの生成
+  #
+  if !$OMIT_STANDARD_DATASECINIB && !$OMIT_IDATA
+    GenerateTentativeDatasecList()
+  end
+
+  #
+  #  仮bssセクション初期化ブロックの生成
+  #
+  if !$OMIT_STANDARD_BSSSECINIB
+    GenerateTentativeBsssecList()
+  end
+else
+  #
+  #  手動メモリ配置の場合
+  #
+
+  #
+  #  メモリオブジェクトに関する情報とリストの作成
+  #
+  # メモリオブジェクトの情報に，以下の修正を加える．
+  #
+  # $memObj[key][:acptn1]：通常操作1（書込み）のアクセス許可パターン．
+  #						   メモリオブジェクト属性にTA_NOWRITEが設定さ
+  #						   れている場合は0にする
+  #
+  # さらに，メモリオブジェクトの情報に，以下の情報を追加する．
+  #
+  # $memObj[key][:accatr]：メモリオブジェクトアクセス属性
+  # $memObj[key][:linkonly]：リンクオンリーセクションか？
+  # $memObj[key][:MP_TOP]：メモリ保護単位の先頭
+  # $memObjList：メモリオブジェクトの先頭のリスト
+  # $memObj[key][:baseaddr]：メモリオブジェクトの先頭番地
+  # $memObj[key][:endaddr]：メモリオブジェクトの終了番地
+  # $memObj[key][:aendaddr]：メモリオブジェクトのアラインした終了番地
+  # $memObj[key][:poffset]：物理アドレスとのオフセット
+  #
+  $globalVars.push("memObjList")
+  $memObjList = []
+
+  $memObj.each do |key, params|
+    if (params[:mematr] & $TA_NOWRITE) != 0
+      params[:acptn1] = NumStr.new(0, "0U")
+    end
+
+    params[:accatr] = params[:mematr]
+    params[:linkonly] = ((params[:mematr] & ($TA_NOREAD|$TA_NOWRITE|$TA_EXEC)) \
+												== ($TA_NOREAD|$TA_NOWRITE))
+    params[:MP_TOP] = true
+    $memObjList.push(key)
+
+    params[:baseaddr] = params[:base]
+    params[:endaddr] = params[:base] + params[:size]
+    params[:aendaddr] = params[:endaddr]
+    if params.has_key?(:paddr)
+      params[:poffset] = params[:paddr] - params[:base]
+    else
+      params[:poffset] = 0
+    end
+
+    if params[:aendaddr] > $pointerLimit
+      error_ercd("E_PAR", params, "%%size is too large in %apiname")
+    end
+  end
+
+  #
+  #  メモリオブジェクトの重なりのチェックとアドレス順のソート
+  #
+  # $memObj[key][:maendaddr]：空のメモリオブジェクトを取り除いた後のメ
+  #							  モリオブジェクトのアラインした終了番地
+  # $memObj[key][:MAEND_MLABEL]：[:maendaddr]に対応するメモリオブジェク
+  #								 トのラベル
+  # $memObj[key][:suppressend]：次のメモリオブジェクトと隣接しているか？
+  # $memObj[key][:merged]：併合されたユーザスタック領域か？
+  # $sortedMemtopList：メモリオブジェクトのベースアドレス順のリスト（空
+  #					   のメモリオブジェクトは含めない，併合されたユーザ
+  #					   スタック領域は含めない，リンクオンリーセクション
+  #					   は含めない）
+  #
+  $globalVars.push("sortedMemtopList")
+  SortMemtopList()
+
+  #
+  #  メモリオブジェクト初期化ブロックの生成
+  #
+  $globalVars.push("meminibSize")
+  if !$OMIT_STANDARD_MEMINIB
+    $kernelMemC.comment_header("Memory Object Initialization Information")
+    GenerateMeminib()
+  end
+end
+
+#
+#  kernel_cfg.hの末尾部分の生成
+#
+$kernelCfgH.append(<<EOS)
+#endif /* TOPPERS_KERNEL_CFG_H */
+EOS

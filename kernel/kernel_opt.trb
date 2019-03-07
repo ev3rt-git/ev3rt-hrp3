@@ -1,0 +1,151 @@
+# -*- coding: utf-8 -*-
+#
+#   TOPPERS/HRP Kernel
+#       Toyohashi Open Platform for Embedded Real-Time Systems/
+#       High Reliable system Profile Kernel
+# 
+#   Copyright (C) 2016-2018 by Embedded and Real-Time Systems Laboratory
+#               Graduate School of Information Science, Nagoya Univ., JAPAN
+# 
+#   上記著作権者は，以下の(1)〜(4)の条件を満たす場合に限り，本ソフトウェ
+#   ア（本ソフトウェアを改変したものを含む．以下同じ）を使用・複製・改
+#   変・再配布（以下，利用と呼ぶ）することを無償で許諾する．
+#   (1) 本ソフトウェアをソースコードの形で利用する場合には，上記の著作
+#       権表示，この利用条件および下記の無保証規定が，そのままの形でソー
+#       スコード中に含まれていること．
+#   (2) 本ソフトウェアを，ライブラリ形式など，他のソフトウェア開発に使
+#       用できる形で再配布する場合には，再配布に伴うドキュメント（利用
+#       者マニュアルなど）に，上記の著作権表示，この利用条件および下記
+#       の無保証規定を掲載すること．
+#   (3) 本ソフトウェアを，機器に組み込むなど，他のソフトウェア開発に使
+#       用できない形で再配布する場合には，次のいずれかの条件を満たすこ
+#       と．
+#     (a) 再配布に伴うドキュメント（利用者マニュアルなど）に，上記の著
+#         作権表示，この利用条件および下記の無保証規定を掲載すること．
+#     (b) 再配布の形態を，別に定める方法によって，TOPPERSプロジェクトに
+#         報告すること．
+#   (4) 本ソフトウェアの利用により直接的または間接的に生じるいかなる損
+#       害からも，上記著作権者およびTOPPERSプロジェクトを免責すること．
+#       また，本ソフトウェアのユーザまたはエンドユーザからのいかなる理
+#       由に基づく請求からも，上記著作権者およびTOPPERSプロジェクトを
+#       免責すること．
+#
+#   本ソフトウェアは，無保証で提供されているものである．上記著作権者お
+#   よびTOPPERSプロジェクトは，本ソフトウェアに関して，特定の使用目的
+#   に対する適合性も含めて，いかなる保証も行わない．また，本ソフトウェ
+#   アの利用により直接的または間接的に生じたいかなる損害に関しても，そ
+#   の責任を負わない．
+#
+#   $Id: kernel_opt.trb 357 2018-04-14 08:42:39Z ertl-hiro $
+#
+
+#
+#  共通部の読込み
+#
+IncludeTrb("kernel/kernel_lib.trb")
+
+#
+#  タイムスタンプファイルの指定
+#
+$timeStampFileName = "kernel_opt.timestamp"
+
+#
+#  データセクションのLMAからVMAへのコピー
+#
+CopyLma()
+
+#
+#  kernel_mem3.cの先頭部分の生成
+#
+$kernelMemC = GenFile.new("kernel_mem3.c")
+$kernelMemC.add("/* kernel_mem3.c */")
+GenerateCFileHeader($kernelMemC)
+
+#
+#  保護ドメイン
+#
+if $USE_LATERPASS_DOMINIB
+  GenerateDominib($kernelMemC)
+end
+
+#
+#  シンボルと仮メモリオブジェクト初期化ブロックの読込み
+#
+# $memObj[key][:baseaddr]：メモリオブジェクトの先頭番地
+# $memObj[key][:endaddr]：メモリオブジェクトの終了番地
+# $memObj[key][:aendaddr]：メモリオブジェクトのアラインした終了番地
+#
+if !$OMIT_STANDARD_MEMINIB
+  memtop_table = SYMBOL("_kernel_memtop_table")
+  offset = 0
+
+  $memObjList.each do |key|
+    params = $memObj[key]
+    if params[:linker]
+      params[:baseaddr] = SYMBOL("__start_#{params[:MLABEL]}")
+      params[:endaddr] = SYMBOL("__end_#{params[:MLABEL]}")
+      params[:aendaddr] = SYMBOL("__aend_#{params[:MLABEL]}")
+    else
+      params[:baseaddr] = PEEK(memtop_table + offset, $sizeof_void_ptr)
+      offset += 4
+      params[:endaddr] = params[:baseaddr] + params[:size]
+      params[:aendaddr] = params[:endaddr]
+    end
+  end
+end
+
+#
+#  仮メモリオブジェクト初期化ブロックのサイズ適正化と生成
+#
+if !$OMIT_STANDARD_MEMINIB
+  if $OPTIMIZE_MEMINIB
+    # メモリオブジェクト初期化ブロックのサイズの再算出
+    # アドレス0を置く領域
+    $meminibSize = 1
+
+    $memObjList.each do |key|
+      params = $memObj[key]
+
+      # サイズが0でないメモリオブジェクトの先頭番地を置く領域
+      if params[:baseaddr] != params[:endaddr]
+        $meminibSize += 1
+      end
+
+      if !params[:linker]
+        # リンカが配置しないメモリオブジェクトは最終番地も必要
+        $meminibSize += 1
+      elsif $memObj[params[:moLast]][:MEMREG_LAST]
+        # メモリリージョンの最後のメモリオブジェクトは最終番地も必要
+        $meminibSize += 1
+      end
+    end
+
+    # ターゲット依存で$meminibSizeを補正する場合
+    if defined? TargetCalcMeminibSize()
+      $meminibSize = TargetCalcMeminibSize($meminibSize)
+    end
+  end
+
+  # 仮メモリオブジェクト初期化ブロックの生成
+  GenerateTentativeMeminib()
+end
+
+#
+#  仮dataセクション初期化ブロックのサイズ適正化と生成
+#
+if !$OMIT_STANDARD_DATASECINIB && !$OMIT_IDATA
+  if $OPTIMIZE_DATASEC_LIST && $datasecList.size > 0
+    OptimizeDatasecList()
+  end
+  GenerateTentativeDatasecList()
+end
+
+#
+#  仮bssセクション初期化ブロックのサイズ適正化と生成
+#
+if !$OMIT_STANDARD_BSSSECINIB
+  if $OPTIMIZE_BSSSEC_LIST && $bsssecList.size > 0
+    OptimizeBsssecList()
+  end
+  GenerateTentativeBsssecList()
+end

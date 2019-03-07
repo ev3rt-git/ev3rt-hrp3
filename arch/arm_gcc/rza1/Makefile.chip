@@ -1,0 +1,41 @@
+#
+#		Makefile のチップ依存部（RZ/A1用）
+#
+#  $Id: Makefile.chip 548 2018-11-19 17:52:07Z ertl-hiro $
+# 
+
+#
+#  チップ依存部ディレクトリ名の定義
+#
+CHIPDIR = $(SRCDIR)/arch/$(CORE)_$(TOOL)/$(CHIP)
+
+#
+#  コンパイルオプション
+#
+INCLUDES := $(INCLUDES) -I$(CHIPDIR)
+COPTS := $(COPTS) -mcpu=cortex-a9
+LDFLAGS := $(LDFLAGS) -mcpu=cortex-a9
+CDEFS := $(CDEFS) -D__TARGET_ARCH_ARM=7
+
+#
+#  カーネルに関する定義
+#
+KERNEL_DIRS := $(KERNEL_DIRS) $(CHIPDIR)
+KERNEL_COBJS := $(KERNEL_COBJS) chip_kernel_impl.o mpcore_kernel_impl.o \
+									gic_kernel_impl.o pl310.o chip_timer.o
+KERNEL_ASMOBJS := $(KERNEL_ASMOBJS) gic_support.o
+
+#
+#  システムサービスに関する定義
+#
+SYSSVC_DIRS := $(SYSSVC_DIRS) $(CHIPDIR)
+
+#
+#  コンフィギュレータ関係の変数の定義
+#
+CFG_TABS := $(CFG_TABS) --symval-table $(CHIPDIR)/chip_sym.def
+
+#
+#  コア依存部
+#
+include $(SRCDIR)/arch/$(CORE)_$(TOOL)/common/Makefile.core

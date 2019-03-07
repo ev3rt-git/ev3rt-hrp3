@@ -1,0 +1,560 @@
+# -*- coding: utf-8 -*-
+#
+#   TOPPERS/HRP Kernel
+#       Toyohashi Open Platform for Embedded Real-Time Systems/
+#       High Reliable system Profile Kernel
+# 
+#   Copyright (C) 2016-2018 by Embedded and Real-Time Systems Laboratory
+#               Graduate School of Information Science, Nagoya Univ., JAPAN
+# 
+#   上記著作権者は，以下の(1)〜(4)の条件を満たす場合に限り，本ソフトウェ
+#   ア（本ソフトウェアを改変したものを含む．以下同じ）を使用・複製・改
+#   変・再配布（以下，利用と呼ぶ）することを無償で許諾する．
+#   (1) 本ソフトウェアをソースコードの形で利用する場合には，上記の著作
+#       権表示，この利用条件および下記の無保証規定が，そのままの形でソー
+#       スコード中に含まれていること．
+#   (2) 本ソフトウェアを，ライブラリ形式など，他のソフトウェア開発に使
+#       用できる形で再配布する場合には，再配布に伴うドキュメント（利用
+#       者マニュアルなど）に，上記の著作権表示，この利用条件および下記
+#       の無保証規定を掲載すること．
+#   (3) 本ソフトウェアを，機器に組み込むなど，他のソフトウェア開発に使
+#       用できない形で再配布する場合には，次のいずれかの条件を満たすこ
+#       と．
+#     (a) 再配布に伴うドキュメント（利用者マニュアルなど）に，上記の著
+#         作権表示，この利用条件および下記の無保証規定を掲載すること．
+#     (b) 再配布の形態を，別に定める方法によって，TOPPERSプロジェクトに
+#         報告すること．
+#   (4) 本ソフトウェアの利用により直接的または間接的に生じるいかなる損
+#       害からも，上記著作権者およびTOPPERSプロジェクトを免責すること．
+#       また，本ソフトウェアのユーザまたはエンドユーザからのいかなる理
+#       由に基づく請求からも，上記著作権者およびTOPPERSプロジェクトを
+#       免責すること．
+# 
+#   本ソフトウェアは，無保証で提供されているものである．上記著作権者お
+#   よびTOPPERSプロジェクトは，本ソフトウェアに関して，特定の使用目的
+#   に対する適合性も含めて，いかなる保証も行わない．また，本ソフトウェ
+#   アの利用により直接的または間接的に生じたいかなる損害に関しても，そ
+#   の責任を負わない．
+# 
+#   $Id: memory.trb 648 2019-01-14 05:26:19Z ertl-hiro $
+# 
+
+#
+#		メモリオブジェクト管理機能の生成スクリプト
+#
+
+#
+#  メモリ配置のみに影響を与えるメモリオブジェクト属性の設定
+#
+# $MEMATR_MLO：メモリ配置のみに影響を与えるメモリオブジェクト属性
+#			  （ターゲット定義のメモリオブジェクト属性で，メモリオブジェ
+#				クトアクセス属性でないものは，メモリ配置のみに影響を与
+#				えると仮定している）
+# $MEMATR_INI：メモリオブジェクトアクセス属性以外の（言い換えると，メ
+#			   モリ保護設定に影響を与えない）メモリオブジェクト属性
+#
+$MEMATR_MLO = ($TA_SDATA | ($TARGET_MEMATR & ~($TARGET_ACCATR)))
+$MEMATR_INI = ($MEMATR_MLO|$TA_MEMINI|$TA_MEMZERO)
+
+#
+#  統合前のメモリオブジェクトの情報の加工
+#
+# 統合前のメモリオブジェクトの情報に，以下の修正を加える．
+#
+# $memObj[key][:acptn1]：メモリオブジェクト属性にTA_NOWRITEが設定され
+#						 ている場合は，通常操作1（書込み）のアクセス許
+#						 可パターンを0にする
+#
+# さらに，統合前のメモリオブジェクトの情報に，以下の情報を追加する．
+#
+# $memObj[key][:accatr]：メモリオブジェクトアクセス属性
+# $memObj[key][:nowrite]：メモリオブジェクト属性にTA_NOWRITEが設定され
+#						  ているか？
+# $memObj[key][:linkonly]：リンクオンリーセクションか？
+# $memObj[key][:stdregion]：保護ドメイン共通の標準ROM/RAMリージョンか？
+#							（リンカが配置する場合のみ）
+# $memObj[key][:stdmematr]：メモリオブジェクト属性が標準的なものか？
+# $memObj[key][:stdaccatr]：メモリオブジェクトアクセス属性が標準的なものか？
+# $memObj[key][:stdacptn12]：ACPTN1とACPTN2が標準か？
+# $memObj[key][:srpw]：標準共有リード専有ライト領域か？
+# $memObj[key][:stdacptn4]：ACPTN4が標準か？
+# $memObj[key][:sdata]：ショートデータ領域か？
+# $memObj[key][:memini]：TA_MEMINI属性が設定された場合と同様に扱う
+#						（TA_NOWRITE属性のメモリオブジェクトが，TA_NOWRITE
+#						  属性でないメモリリージョンに登録された場合）
+#
+$memObj.each do |_, params|
+  if (params[:mematr] & $MEMATR_INI) != 0
+    accatr = params[:mematr] & ~($MEMATR_INI)
+    params[:accatr] = NumStr.new(accatr, "0x" + accatr.to_s(16))
+  else
+    params[:accatr] = params[:mematr]
+  end
+  params[:nowrite] = ((params[:mematr] & $TA_NOWRITE) != 0)
+  params[:linkonly] = ((params[:mematr] & ($TA_NOREAD|$TA_NOWRITE|$TA_EXEC)) \
+												== ($TA_NOREAD|$TA_NOWRITE))
+  if params[:nowrite]
+    params[:acptn1] = NumStr.new(0, "0U")
+    if params[:linker] && params[:memreg] == $commonMemreg[:stdrom]
+      params[:stdregion] = true
+    end
+    if (params[:mematr] & $TA_EXEC) != 0
+      stdmematr = $TA_TEXTSEC
+    else
+      stdmematr = $TA_RODATASEC
+    end
+  else
+    if params[:linker] && params[:memreg] == $commonMemreg[:stdram]
+      params[:stdregion] = true
+    end
+    if (params[:mematr] & $TA_MEMINI) != 0
+      stdmematr = $TA_DATASEC
+    elsif (params[:mematr] & $TA_MEMZERO) != 0
+      stdmematr = $TA_BSSSEC
+    else
+      stdmematr = $TA_NOINITSEC
+    end
+  end
+  params[:stdmematr] = ((params[:mematr] & ~($MEMATR_MLO)) \
+										== (stdmematr & ~($MEMATR_MLO)))
+  params[:stdaccatr] = (params[:accatr] == (stdmematr & ~($MEMATR_INI)))
+
+  domptn = $defaultAcptn[params[:domain]]
+  if params[:nowrite]
+    params[:stdacptn12] = (params[:acptn2] == domptn)
+    params[:srpw] = false
+  else
+    if params[:acptn1] == domptn
+      params[:stdacptn12] = (params[:acptn2] == domptn)
+      params[:srpw] = (params[:stdmematr] && params[:domain] != $TDOM_NONE \
+										&& params[:acptn2] == $TACP_SHARED)
+    else
+      params[:stdacptn12] = false
+      params[:srpw] = false
+    end
+  end
+  params[:stdacptn4] = (params[:acptn4] == domptn)
+  params[:sdata] = ((params[:mematr] & $TA_SDATA) != 0)
+
+  if params[:linker] && params[:nowrite] \
+		&& ($cfgData[:ATT_REG][params[:memreg]][:regatr] & $TA_NOWRITE) == 0
+    params[:memini] = true
+  end
+end
+
+#
+#  統合前のメモリオブジェクトをソートするための指標を作る
+#
+# $memObj[key][:order]：メモリオブジェクトをソートするための指標リスト
+#
+$memObj.each do |key, params|
+  # まず，保護ドメイン共通の標準ROMリージョンを最初にし，その後はメモリ
+  # リージョン番号の順にソートする．
+  if params[:linker]
+    if params[:memreg] == $commonMemreg[:stdrom]
+      memreg = 0
+    else
+      memreg = params[:memreg]
+    end
+  else
+    # リンカが配置しないものは，最後にする．
+    memreg = $cfgData[:ATT_REG].size + 1
+  end
+
+  #	params[:order]の先頭に格納する
+  params[:order] = [ memreg ]
+
+  # リンカの配置対象の場合は、さらにソートする．
+  if params[:linker]
+    # 次に，配置タイプによってソートする．
+    if params[:type] == :USTACK
+      # ユーザスタック領域
+      mltype = 9
+    elsif params[:nowrite]
+      if params[:domain] == $TDOM_KERNEL && params[:stdmematr] \
+						&& !params[:sdata] && params[:stdacptn12] \
+						&& (params[:mematr] & $TA_EXEC) != 0
+        # カーネルドメインの標準専有コード領域
+        mltype = 1
+      elsif params[:domain] == $TDOM_NONE && params[:stdmematr] \
+				&& params[:stdacptn12] && (params[:mematr] & $TA_EXEC) != 0
+        # 無所属の標準共有コード領域
+        mltype = 3
+      else
+        srodata_rom = (params[:memreg] \
+							!= $standardMemreg[params[:domain]][:stdsram])
+        if (params[:mematr] & $TA_EXEC) == 0 && params[:stdmematr] \
+										&& params[:acptn2] == $TACP_SHARED
+          # 標準共有定数データ領域
+          mltype = params[:sdata] ? (srodata_rom ? 5 : 14) : 6
+        else
+          # TA_NOWRITE属性のその他の領域
+          mltype = params[:sdata] ? (srodata_rom ? 4 : 13) : 2
+        end
+      end
+    else
+      if params[:srpw]
+        # 標準共有リード専有ライト領域
+        mltype = params[:sdata] ? 12 : 11
+      elsif params[:domain] == $TDOM_KERNEL
+        # カーネルドメイン
+        if params[:stdacptn12]
+          # カーネルドメインの専有リードライト領域
+          mltype = params[:sdata] ? 15 : 8
+        else
+          # カーネルドメインのTA_NOWRITE属性でないその他の領域
+          mltype = params[:sdata] ? 15 : 7
+        end
+      elsif params[:domain] == $TDOM_NONE && params[:stdmematr] \
+												&& params[:stdacptn12]
+        # 無所属の標準共有リードライト領域
+        mltype = params[:sdata] ? 16 : 17
+      else
+        # TA_NOWRITE属性でないその他の領域
+        mltype = params[:sdata] ? 15 : 10
+      end
+    end
+    params[:order].push(mltype)
+
+    # 次に，保護ドメインによってソートする．
+    if params[:type] == :USTACK && $USE_REDZONE
+      # レッドゾーン方式の場合，ユーザスタック領域は保護ドメイン順にソー
+      # トしない．
+      domain = 0
+    elsif params[:domain] == $TDOM_KERNEL
+      domain = 0
+    elsif params[:domain] == $TDOM_NONE
+      domain = $udomainList.size + 1
+    else	
+      domain = params[:domain]
+    end
+    params[:order].push(domain)
+
+    if params[:type] == :USTACK
+      # ユーザスタック領域の場合は，:stkorderでソートする
+      params[:order].push(params[:stkorder])
+    else
+      # mematr1：ソートする際に，アクセス許可ベクタより先に用いる属性
+      mematr1 = (params[:mematr] & ~($TA_EXEC|$TA_MEMINI|$TA_MEMZERO))
+      params[:order].push(mematr1)
+
+      # acptn1とacptn2でソートする
+      params[:order].push(params[:acptn1].val)
+      params[:order].push(params[:acptn2].val)
+
+      if params[:domain] != $TDOM_NONE
+        # 無所属以外では，標準のacptn4を持つものを先に配置する．
+        params[:order].push(params[:stdacptn4] ? 0 : 1)
+      else
+        # 無所属では，標準のacptn4を持つものを後に配置する．
+        params[:order].push(params[:stdacptn4] ? 1 : 0)
+      end
+
+      # 標準でないacptn4の間では，acptn4でソートする．
+      params[:order].push(params[:acptn4].val)
+
+      # TA_EXEC属性が設定されているものを前に配置する
+      params[:order].push((~params[:mematr]) & $TA_EXEC)
+
+      # TA_MEMINI，TA_MEMZERO，TA_NULLの順に配置する
+      mematr2 = (params[:mematr] & ($TA_MEMINI|$TA_MEMZERO))
+      if mematr2 == 0
+        mematr2 = ($TA_MEMINI|$TA_MEMZERO)
+      end
+      params[:order].push(mematr2)
+    end
+  end
+
+  # 静的APIの記述順に配置する．
+  params[:order].push(key)
+end
+
+#
+#  メモリオブジェクトのソート
+#
+$memObj = Hash[$memObj.sort_by {|_, params| params[:order]}]
+
+#
+#  メモリオブジェクトの統合処理
+#
+# $memObj[key][:SEC_TOP]：セクションの先頭
+# $memObj[key][:SEC_LAST]：セクションの最後
+# $memObj[key][:MO_TOP]：統合後のメモリオブジェクトの先頭
+# $memObj[key][:MO_LAST]：統合後のメモリオブジェクトの最後
+# $memObj[key][:MP_TOP]：メモリ保護単位の先頭
+# $memObj[key][:MP_LAST]：メモリ保護単位の最後
+# $memObj[key][:MEMREG_TOP]：メモリリージョンの先頭
+# $memObj[key][:MEMREG_LAST]：メモリリージョンの最後
+# $memObj[key][:SRPW_TOP]：標準共有リード専用ライト領域全体の先頭
+# $memObj[key][:SRPW_LAST]：標準共有リード専用ライト領域全体の最後
+# $memObj[key][:SDATA_TOP]：ショートデータセクションの先頭
+# $memObj[key][:moLast]：統合後のメモリオブジェクトの最後（統合後のメ
+#						 モリオブジェクトの先頭のみに対して設定）
+# $memObj[key][:secLast]：セクションの最後（セクションの先頭のみに対し
+#						  て設定）
+# $memObj[key][:mpLast]：メモリ保護単位の最後（メモリ保護単位の先頭の
+#						 みに対して設定）
+# $memObjList：統合後のメモリオブジェクトの先頭のリスト
+#
+$globalVars.push("memObjList")
+$memObjList = []
+prevParams = {}		# ループの外側で変数を定義しておく必要がある
+prevKey = 0
+secTop = 0
+moTop = 0
+mpTop = 0
+$memObj.each_with_index do |(key, params), index|
+  if index == 0
+    params[:SEC_TOP] = true
+    params[:MO_TOP] = true
+    params[:MP_TOP] = true
+    if params[:linker]
+      params[:MEMREG_TOP] = true
+    end
+    if params[:srpw]
+      params[:SRPW_TOP] = true
+    end
+    secTop = key
+    moTop = key
+    mpTop = key
+  else
+    if params[:memreg] != prevParams[:memreg] \
+			|| !params[:linker] || params[:type] == :USTACK \
+			|| !prevParams[:linker] || prevParams[:type] == :USTACK \
+			|| params[:accatr] != prevParams[:accatr] \
+			|| params[:acptn1] != prevParams[:acptn1] \
+			|| params[:acptn2] != prevParams[:acptn2]
+      # メモリ保護単位の境界
+      params[:SEC_TOP] = true
+      params[:MO_TOP] = true
+      params[:MP_TOP] = true
+      prevParams[:SEC_LAST] = true
+      prevParams[:MO_LAST] = true
+      prevParams[:MP_LAST] = true
+      $memObj[secTop][:secLast] = prevKey
+      $memObj[moTop][:moLast] = prevKey
+      $memObj[mpTop][:mpLast] = prevKey
+      secTop = key
+      moTop = key
+      mpTop = key
+    elsif params[:acptn4] != prevParams[:acptn4]
+      # メモリオブジェクトの境界
+      params[:SEC_TOP] = true
+      params[:MO_TOP] = true
+      prevParams[:SEC_LAST] = true
+      prevParams[:MO_LAST] = true
+      $memObj[secTop][:secLast] = prevKey
+      $memObj[moTop][:moLast] = prevKey
+      secTop = key
+      moTop = key
+    elsif params[:mematr] != prevParams[:mematr] \
+							|| params[:domain] != prevParams[:domain]
+      # セクションの境界
+      params[:SEC_TOP] = true
+      prevParams[:SEC_LAST] = true
+      $memObj[secTop][:secLast] = prevKey
+      secTop = key
+    end
+
+    if prevParams[:linker]
+      if params[:linker]
+        if prevParams[:memreg] != params[:memreg]
+          # メモリリージョンの境界
+          params[:MEMREG_TOP] = true
+          prevParams[:MEMREG_LAST] = true
+        end
+      else
+        # リンカが配置するかしないかの境界
+        prevParams[:MEMREG_LAST] = true
+      end
+    end
+
+    if !prevParams[:srpw] && params[:srpw]
+      # 標準共有リード専用ライト領域全体の先頭
+      params[:SRPW_TOP] = true
+    end
+    if prevParams[:srpw] && !params[:srpw]
+      # 標準共有リード専用ライト領域全体の最後
+      prevParams[:SRPW_LAST] = true
+    end
+    if !prevParams[:sdata] && params[:sdata]
+      # ショートデータセクションの先頭
+      params[:SDATA_TOP] = true
+    end
+  end
+
+  # memObjListへの追加
+  if params[:MO_TOP]
+    $memObjList.push(key)
+  end
+
+  prevParams = params
+  prevKey = key
+end
+prevParams[:SEC_LAST] = true
+prevParams[:MO_LAST] = true
+prevParams[:MP_LAST] = true
+if prevParams[:linker]
+  prevParams[:MEMREG_LAST] = true
+end
+if prevParams[:srpw]
+  prevParams[:SRPW_LAST] = true
+end
+$memObj[secTop][:secLast] = prevKey
+$memObj[moTop][:moLast] = prevKey
+$memObj[mpTop][:mpLast] = prevKey
+
+#
+#  アクセス許可パターンのラベル中での文字列
+#
+def AcptnStr(acptn)
+  if acptn == $TACP_SHARED
+    return("S")
+  else
+    return acptn.to_s(16)
+  end
+end
+
+#
+#  メモリオブジェクトのラベルの生成
+#
+# $memObj[key][:SLABEL]：セクションのラベル
+# $memObj[key][:ILABEL]：初期化データ領域のラベル
+# $memObj[key][:MLABEL]：メモリオブジェクトのラベル
+# $memObj[key][:PLABEL]：メモリ保護単位のラベル
+# $memObj[key][:SRPWLABEL]：標準共有リード専有ライト領域全体のラベル
+# $datasecList：初期化すべきdataセクションのリスト
+# $bsssecList：クリアすべきbssセクションのリスト
+#
+$globalVars.push("datasecList")
+$globalVars.push("bsssecList")
+$datasecList = []
+$bsssecList = []
+slabel = ""
+ilabel = ""
+mlabel = ""
+plabel = ""
+srpwlabel = ""
+$memObj.each do |key, params|
+  next unless params[:linker]
+
+  if params[:type] == :USTACK
+    slabel = params[:secname].sub(/^\./, "")
+    ilabel = ""
+    mlabel = slabel
+    plabel = slabel
+    srpwlabel = ""
+  elsif params[:SEC_TOP]
+	# セクションの先頭の場合，セクションのラベルを生成
+
+    # メモリリージョン名
+    if params[:stdregion]
+      reglabel = ""
+    else
+      reglabel = $cfgData[:ATT_REG][params[:memreg]][:regname] + "_"
+    end
+
+    # セクション種別
+    short = (params[:sdata] ? "s" : "")
+    if params[:nowrite]
+      if (params[:mematr] & $TA_EXEC) != 0
+        seclabel = short + "text_"
+      else
+        seclabel = short + "rodata_"
+      end
+    else
+      if (params[:mematr] & $TA_MEMINI) != 0
+        seclabel = short + "data_"
+      elsif (params[:mematr] & $TA_MEMZERO) != 0
+        seclabel = short + "bss_"
+      else
+        seclabel = short + "noinit_"
+      end
+    end
+
+    # 保護ドメイン名
+    domlabel = $domData[params[:domain]][:label]
+
+	# メモリオブジェクト属性
+    mematr = params[:stdmematr] ? "" : "_A" + params[:mematr].val.to_s(16)
+
+	# 通常操作1，通常操作2，参照操作のアクセス許可パターン
+    if params[:stdacptn12] && params[:stdacptn4]
+      acptn12 = ""
+      acptn124 = ""
+    else
+      if params[:nowrite]
+        acptn12 = "_" + AcptnStr(params[:acptn2].val)
+      else
+        acptn12 = "_" + AcptnStr(params[:acptn1].val) \
+								+ "_" + AcptnStr(params[:acptn2].val)
+      end
+      if params[:stdacptn4]
+        acptn124 = acptn12
+      else
+        acptn124 = acptn12 + "_" + AcptnStr(params[:acptn4].val)
+      end
+    end
+
+    # セクションのラベル
+    slabel = reglabel + seclabel + domlabel + mematr + acptn124
+
+	# 初期化／クリアすべきセクションの処理
+    ilabel = ""
+    if (params[:mematr] & $TA_MEMINI) != 0 || params[:memini]
+      # dataセクションの初期化を行う条件をチェック［NGKI3984］
+      regatr = $cfgData[:ATT_REG][$commonMemreg[:stdrom]][:regatr]
+      if !$OMIT_IDATA && (regatr & $TA_NOWRITE) != 0
+        $datasecList.push(key)
+        ilabel = reglabel + "i" + seclabel + domlabel + mematr + acptn124
+      end
+    elsif (params[:mematr] & $TA_MEMZERO) != 0
+      $bsssecList.push(key)
+    end
+
+    if params[:MO_TOP]
+	  # メモリオブジェクトの先頭の場合，メモリオブジェクトのラベルを生成
+
+	  # メモリオブジェクト種別
+      if params[:srpw]
+        typelabel = short + "srpw_"
+        acptn12 = ""
+        if params[:stdacptn4]
+          acptn124 = ""
+        else
+          acptn124 = "_" + AcptnStr(params[:acptn4].val)
+        end
+      elsif params[:nowrite]
+        typelabel = seclabel
+      else
+        typelabel = short + "rwdata_"
+      end
+
+	  # メモリオブジェクトの統合に影響を与えるメモリオブジェクト属性
+      accatr = params[:stdaccatr] ? "" : "_A" + params[:accatr].val.to_s(16)
+
+      # メモリオブジェクトのラベル
+      mlabel = "mo_" + reglabel + typelabel + domlabel + accatr + acptn124
+
+      if params[:MP_TOP]
+	    # メモリ保護単位の先頭の場合，メモリ保護単位のラベルを生成
+
+	    # メモリ保護単位のラベル
+        plabel = "mp_" + reglabel + typelabel + domlabel + accatr + acptn12
+
+        # 標準共有リード専有ライト領域全体のラベル
+        if params[:srpw]
+          srpwlabel = "mp_" + reglabel + typelabel + "all"
+        else
+          srpwlabel = ""
+        end
+      end
+    end
+  end
+
+  params[:SLABEL] = slabel
+  params[:ILABEL] = ilabel if ilabel != ""
+  params[:MLABEL] = mlabel
+  params[:PLABEL] = plabel
+  params[:SRPWLABEL] = srpwlabel if srpwlabel != ""
+end
