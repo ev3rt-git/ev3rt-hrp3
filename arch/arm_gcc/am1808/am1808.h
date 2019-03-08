@@ -33,7 +33,7 @@
  *  割込み優先度に関する設定
  */
 #define TMIN_INTPRI (-31) /* Channel 2  -> Priority -31 */
-#define TMAX_INTPRI (-1)  /* Channel 32 -> Priority -1  */
+#define TMAX_INTPRI (-2)  /* Channel 31 -> Priority -2  */
 
 #define ISR_VECTORS	((volatile void**)0xFFFF0200)
 

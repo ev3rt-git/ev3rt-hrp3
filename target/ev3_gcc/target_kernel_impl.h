@@ -39,8 +39,5 @@ extern void target_exit(void) NoReturn;
 
 #endif /* TOPPERS_MACRO_ONLY */
 
-// TODO: CHECK_TARGET_USTACK is not supported currently
-#define CHECK_TARGET_USTACK(...)
-
 #include "chip_kernel_impl.h"
 

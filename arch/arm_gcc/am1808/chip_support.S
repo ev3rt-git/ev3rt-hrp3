@@ -85,7 +85,7 @@ ALABEL(irc_begin_int)
      */
     ldr     r1, =CMR
     ldrb    r0, [r1, r4] /* r0 <- 割込み要因の優先度 */
-    orr     r0, #0xF0000000
+    orr     r0, #0x80000000
     ldr     r1, =HINLR2
     str     r0, [r1]
     str     r2, [r2] /* Release frozen registers */

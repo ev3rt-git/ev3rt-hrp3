@@ -172,7 +172,7 @@ static volatile unsigned int pageTable[MMU_PAGETABLE_NUM_ENTRY]
 
 static void refresh_mmcsd_status() {
 	MMCSDIsr(0);
-    tslp_tsk(1); // yield CPU if called from task context
+    tslp_tsk(1U * 1000U); // yield CPU if called from task context
 }
 
 /*---------------------------------------------------------------------------*/
@@ -288,7 +288,7 @@ static unsigned int MMCSDXferStatusGet(mmcsdCtrlInfo *ctrl)
 		  syslog(LOG_EMERG, "MMCNBLC: 0x%08x", MMCSD0.MMCNBLC);
 		  syslog(LOG_EMERG, "MMCNBLK: 0x%08x", MMCSD0.MMCNBLK);
 		  assert(false);
-		  tslp_tsk(1000);
+		  tslp_tsk(1000U * 10000U);
 	  }
   }
   assert((int)xferCompFlag + (int)dataTimeout + (int)dataCRCError == 1); // Only handle one flag
@@ -686,7 +686,7 @@ void initialize_mmcsd() {
     		break;
     	}
     	syslog(LOG_ERROR, "Card is not present");
-    	tslp_tsk(1000);
+        tslp_tsk(1000U * 1000U);
     }
 
     /* Initialize device control interface for FatFS */

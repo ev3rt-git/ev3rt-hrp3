@@ -75,7 +75,6 @@ chip_initialize(void)
      */
     AINTC.GER  = 0x1;
     AINTC.HIER = 0x2;
-    AINTC.EISR = 21;
     AINTC.CR   = 0x14;
     t_set_ipm(0); /* Set IPM to 0 */
 

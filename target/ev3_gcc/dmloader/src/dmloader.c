@@ -79,6 +79,7 @@ probe_ldm_memory(const void *base, uint32_t size, T_LDM_CAN *ldm_can) {
 	return false;
 }
 
+#if 0
 /**
  * Application task wrapper
  * \param exinf Pointer of actual T_CTSK
@@ -91,6 +92,7 @@ static void app_tsk_wrapper(intptr_t exinf) {
 #endif
 	pk_ctsk->task(pk_ctsk->exinf);
 }
+#endif
 
 #if 0 // TODO: support in HRP3
 /**
@@ -126,8 +128,10 @@ handle_module_cfg_tab(T_LDM_CAN *ldm_can) {
 			pk_ctsk.tskatr &= ~TA_ACT;                                     // Clear TA_ACT
 			assert(get_atrdomid(pk_ctsk.tskatr) == TDOM_SELF);             // Check original DOMID
 			pk_ctsk.tskatr |= TA_DOM(ldm_can->domid);                      // Set new DOMID
+#if 0 // TODO: not for HRP3
 			pk_ctsk.task = app_tsk_wrapper;                                // Use task wrapper
 			pk_ctsk.exinf = (intptr_t)ent->argument;
+#endif
 			SVC_PERROR(ercd = acre_tsk(&pk_ctsk));
 			if(ercd > 0) {
 				// Store ID

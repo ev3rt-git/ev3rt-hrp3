@@ -70,7 +70,7 @@
  *  デフォルトの非タスクコンテキスト用のスタック領域の定義
  */
 #ifndef DEFAULT_ISTKSZ
-#define DEFAULT_ISTKSZ  0x2000U			/* 8KB */
+#define DEFAULT_ISTKSZ  0x10000U			/* 64KB */
 #endif /* DEFAULT_ISTKSZ */
 
 /*
@@ -89,6 +89,8 @@
  */
 #define ASM_DATA_SYNC_BARRIER(...)
 #define ASM_INST_SYNC_BARRIER(...)
+#define DATA_SYNC_BARRIER(...)
+#define INST_SYNC_BARRIER(...)
 
 /*
  *  割込み番号の範囲の判定
@@ -104,6 +106,11 @@
  *  割込み要求ライン設定テーブルを生成する
  */
 #define USE_INTCFG_TABLE
+
+/*
+ *  MMUの使用に関する設定
+ */
+#define USE_ARM_MMU
 
 /*
  *  コア依存部
