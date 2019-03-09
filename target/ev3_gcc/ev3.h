@@ -18,6 +18,7 @@
 #define INTNO_UART_PORT2 (UART0_INT)
 #define INTNO_UART_PORT3 (SUART2_INT)
 #define INTNO_UART_PORT4 (SUART1_INT)
+#define INTNO_I2C_TIMER  (T64P1_TINT34)
 
 /**
  * Interrupt priority

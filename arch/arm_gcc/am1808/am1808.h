@@ -16,6 +16,7 @@
 #define T64P0_TINT12 21
 #define T64P0_TINT34 22
 #define T64P1_TINT12 23
+#define T64P1_TINT34 24
 #define UART0_INT    25
 #define UART1_INT    53
 #define UART2_INT    61

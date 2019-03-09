@@ -140,7 +140,7 @@ target_twdtimer_start(PRCTIM twdtim)
     if (twdtim > 0) {
         /* Set target and enable */
         TIMERP1.PRD12 = PRCTIM_TO_CMWCNT(twdtim);
-        TIMERP1.TCR = 0x40;
+        TIMERP1.TCR |= 0x40;
     } else {
         raise_int(INTNO_TWDTIMER);
     }
@@ -155,7 +155,7 @@ target_twdtimer_stop(void)
     PRCTIM prctim = 0;
 
     /* Disable */
-    TIMERP1.TCR = 0x0;
+    TIMERP1.TCR &= ~0x40;
 
     /* Check interrupt */
     if ((TIMERP1.INTCTLSTAT & 0x2) == 0) {
@@ -166,7 +166,7 @@ target_twdtimer_stop(void)
         assert(compare >= current);
         prctim = ((PRCTIM)(CMWCNT_TO_PRCTIM(compare - current)));
     } else {
-        TIMERP1.INTCTLSTAT = 0x3;
+        TIMERP1.INTCTLSTAT = 0x10003;
         clear_int(INTNO_TWDTIMER);
     }
 

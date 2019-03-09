@@ -105,13 +105,14 @@ xlog_sys_mod(void *p_excinf) {
 void platform_exception_handler(void *p_excinf, EXCNO excno) {
 	syslog(LOG_EXCEPT, "====================EXCEPTION DETECTED====================");
 
-    uint32_t fsr = 0U, far = 0U;
+    uint32_t fsr = 0U, far = 0xdeafbeefU;
 	ID tid = TSK_NONE;
 #define CP15_READ_IFSR(reg)		Asm("mrc p15, 0, %0, c5, c0, 1":"=r"(reg))
     switch (excno) {
 	case EXCNO_PABORT:
 		syslog_0(LOG_EXCEPT, "Prefetch Abort exception occurs.");
         CP15_READ_IFSR(fsr);
+        /* NOTE: no IFAR for PABORT in ARM926 */
 		break;
 	case EXCNO_DABORT:
 		syslog_0(LOG_EXCEPT, "Data Abort exception occurs.");

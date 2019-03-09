@@ -38,8 +38,6 @@ extern int SIO_PORT_DEFAULT;
  */
 #if defined(LOG_ERROR)
 #define SVC_PERROR(expr) svc_perror(__FILE__, __LINE__, #expr, (expr))
-Inline void
-t_perror(uint_t prio, const char *file, int_t line, const char *expr, ER ercd);
 static inline void
 svc_perror(const char *file, int_t line, const char *expr, ER ercd) {
     if (ercd < 0) {
