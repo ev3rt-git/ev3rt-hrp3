@@ -5,7 +5,7 @@
  *      Author: liyixiao
  */
 
-#include "target_syssvc.h"
+#include "syssvc/syslog.h"
 #include "driver_common.h"
 #include "kernel_cfg.h"
 #include "kernel/kernel_impl.h"

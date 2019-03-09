@@ -39,10 +39,11 @@
  * Task priority
  */
 #define TPRI_INIT_TASK       (TMIN_TPRI)
+#define TPRI_PLATFORM_TERM   (TMIN_TPRI)
 #define TPRI_USBMSC          (TMIN_TPRI + 1)
 #define TPRI_BLUETOOTH_QOS   (TMIN_TPRI + 1)
 #define TPRI_BLUETOOTH_HIGH  (TMIN_TPRI + 2)
-#define TPRI_APP_TERM_TASK   (TMIN_TPRI + 3)
+#define TPRI_APP_TERM_TASK   (TMIN_TPRI + 3) // TODO: move to loader
 #define TPRI_EV3_LCD_TASK    (TMIN_TPRI + 3)
 #define TPRI_EV3_MONITOR     (TMIN_TPRI + 4)
 #define TPRI_PLATFORM_BUSY   (TMIN_TPRI + 5)
@@ -99,21 +100,12 @@
 //#define TMAX_EV3_CYC_NUM       (16)   //!< Maximum number of EV3_CRE_CYC in a user application // TODO: replace w/ HRP3 ver CYC
 
 #ifndef TOPPERS_MACRO_ONLY
+
 /**
  * Default SIO Port for syslog etc.
  */
 extern int SIO_PORT_DEFAULT; // TODO: move to platform/?
 
-/**
- * Utility function for outputting SVC error
- */
-#define SVC_PERROR(expr) svc_perror(__FILE__, __LINE__, #expr, (expr))
-static inline void
-svc_perror(const char *file, int_t line, const char *expr, ER ercd) {
-    if (ercd < 0) {
-        t_perror(LOG_ERROR, file, line, expr, ercd);
-    }
-}
 #endif
 
 /**

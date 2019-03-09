@@ -3,10 +3,6 @@
 #
 
 APPL_COBJS += ev3main.o \
-	ev3rt_config.o \
-	minIni.o
-
-# TODO: support exception in HRP3
-#APPL_COBJS += ev3exception.o \
-#	ev3rt_config.o \
-#	minIni.o
+    ev3rt_config.o \
+    exception_handling.o \
+    minIni.o

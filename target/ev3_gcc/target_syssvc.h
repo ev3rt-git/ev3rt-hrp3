@@ -33,3 +33,17 @@ extern int SIO_PORT_DEFAULT;
 #define LOGTASK_STACK_SIZE	        (4096) // TODO: NOTE: default (1024) is not enough for sample1
 #define TCNT_SYSLOG_BUFFER          (1024)
 
+/*
+ *  Utility function for outputting SVC error
+ */
+#if defined(LOG_ERROR)
+#define SVC_PERROR(expr) svc_perror(__FILE__, __LINE__, #expr, (expr))
+Inline void
+t_perror(uint_t prio, const char *file, int_t line, const char *expr, ER ercd);
+static inline void
+svc_perror(const char *file, int_t line, const char *expr, ER ercd) {
+    if (ercd < 0) {
+        t_perror(LOG_ERROR, file, line, expr, ercd);
+    }
+}
+#endif

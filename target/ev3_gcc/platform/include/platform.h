@@ -41,9 +41,14 @@ extern void ev3rt_logtask(intptr_t exinf);
  */
 extern void ev3_battery_monitor_cyc(intptr_t);
 
-/**
- * Exceptions
+/*
+ *  Exception handling
  */
-extern void ev3_prefetch_handler(void *p_excinf);
-extern void ev3_data_abort_handler(void *p_excinf);
+extern void platform_terminator_task(intptr_t);
+extern void platform_exception_handler(void *p_excinf);
 
+/*
+ *  Provided interface
+ */
+
+extern void platform_add_segment_information(const char *name, uintptr_t paddr, size_t size);

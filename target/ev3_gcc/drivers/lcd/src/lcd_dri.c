@@ -1,5 +1,4 @@
-#include <t_stddef.h>
-#include <t_syslog.h>
+#include "syssvc/syslog.h"
 #include <string.h>
 #include "gpio_dri.h"
 #include <asm-generic/ioctl.h>

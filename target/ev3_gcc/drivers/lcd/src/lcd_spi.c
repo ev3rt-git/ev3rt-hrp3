@@ -5,6 +5,7 @@
  *      Author: liyixiao
  */
 
+#include "syssvc/syslog.h"
 #include "soc.h"
 #include "gpio_dri.h"
 #include "kernel_cfg.h"

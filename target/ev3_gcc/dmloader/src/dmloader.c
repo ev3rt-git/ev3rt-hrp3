@@ -1,21 +1,11 @@
-/*
- * loader.c
- *
- *  Created on: Nov 8, 2013
- *      Author: liyixiao
- */
-
-#include <kernel.h>
-#include <t_syslog.h>
+#include "kernel/kernel_impl.h"
+#include "syssvc/syslog.h"
 #include <kernel_cfg.h>
 #include <string.h>
-//#include "kernel/check.h"
 #include "dmloader.h"
-//#include "dmloader_impl.h"
 #include "../app/common/module_common.h"
 #include "elf32.h"
 #include "platform_interface_layer.h"
-#include "kernel/kernel_impl.h"
 #include "kernel/dataqueue.h"
 #include "ev3.h"
 
@@ -79,33 +69,6 @@ probe_ldm_memory(const void *base, uint32_t size, T_LDM_CAN *ldm_can) {
 	return false;
 }
 
-#if 0
-/**
- * Application task wrapper
- * \param exinf Pointer of actual T_CTSK
- */
-static void app_tsk_wrapper(intptr_t exinf) {
-	const T_CTSK *pk_ctsk = (const T_CTSK *)exinf;
-    syslog(LOG_NOTICE, "no ena_tex in HRP3");
-#if 0 // TODO: support in HRP3
-	SVC_PERROR(ena_tex());
-#endif
-	pk_ctsk->task(pk_ctsk->exinf);
-}
-#endif
-
-#if 0 // TODO: support in HRP3
-/**
- * Application task exception routine (only for termination)
- */
-static void	app_tex_rtn(TEXPTN texptn, intptr_t exinf) {
-	ID tid;
-	get_tid(&tid);
-	syslog(LOG_ERROR, "Task (tid = %d) terminated.", tid);
-	ext_tsk();
-}
-#endif
-
 static ER
 handle_module_cfg_tab(T_LDM_CAN *ldm_can) {
 	// TODO: check cfg table memory
@@ -128,24 +91,10 @@ handle_module_cfg_tab(T_LDM_CAN *ldm_can) {
 			pk_ctsk.tskatr &= ~TA_ACT;                                     // Clear TA_ACT
 			assert(get_atrdomid(pk_ctsk.tskatr) == TDOM_SELF);             // Check original DOMID
 			pk_ctsk.tskatr |= TA_DOM(ldm_can->domid);                      // Set new DOMID
-#if 0 // TODO: not for HRP3
-			pk_ctsk.task = app_tsk_wrapper;                                // Use task wrapper
-			pk_ctsk.exinf = (intptr_t)ent->argument;
-#endif
 			SVC_PERROR(ercd = acre_tsk(&pk_ctsk));
 			if(ercd > 0) {
 				// Store ID
 			    *(ID*)ent->retvalptr = ercd;
-
-                syslog(LOG_NOTICE, "Setup task exception routine is not supported in HRP3!");
-#if 0 // TODO: support in HRP3?
-			    // Setup task exception routine
-			    T_DTEX dtex;
-			    dtex.texatr = TA_NULL;
-			    dtex.texrtn = app_tex_rtn;
-			    ercd = def_tex(ercd, &dtex);
-			    assert(ercd == E_OK);
-#endif
 #if defined(DEBUG) || 1
 			    syslog(LOG_NOTICE, "%s(): Task (tid = %d) created.", __FUNCTION__, *(ID*)ent->retvalptr);
 #endif
