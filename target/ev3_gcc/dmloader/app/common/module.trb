@@ -68,6 +68,9 @@ IncludeTrb("dmloader_dataqueue.trb")
 IncludeTrb("dmloader_pridataqueue.trb")
 IncludeTrb("dmloader_mutex.trb")
 
+# NOTE: cyclic must be generated as last to ensure other IDs already available
+IncludeTrb("dmloader_cyclic.trb")
+
 # ===========================
 # Generate '_module_cfg_tab'
 # ===========================

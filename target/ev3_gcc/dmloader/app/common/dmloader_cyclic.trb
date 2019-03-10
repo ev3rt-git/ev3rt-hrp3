@@ -1,0 +1,106 @@
+# ==================== 
+# Handle CRE_CYC
+# Input:
+#     $moduleCfgC
+#     $moduleCfgH
+#     $modCfgTab
+# Output:
+#     Cyclic IDs in 'module_cfg.h/.c'
+#     _module_ccyc_tab in 'module_cfg.c'
+#     $modCfgTab (updated)
+# ====================
+
+$cfgData[:CRE_CYC].each{|_, params|
+  # Check user domain
+  if $domData[params[:domain]][:domid].str != "TDOM_APP"
+    error_ercd("E_NOSPT", params, "Cyclic must belong to TDOM_APP in dynamic loading mode")
+  end
+
+  objid = :cycid
+  # パラメータを変数に格納
+  nfymode = params[:nfymode]
+  nfymode1 = nfymode & 0x0f
+  nfymode2 = nfymode & ~0x0f
+  # par1 = params[:par1]
+  par2 = params[:par2]
+
+  # 通知処理のパラメータ数による補正処理
+  if nfymode == $TNFY_HANDLER || nfymode1 == $TNFY_SETVAR \
+								|| nfymode1 == $TNFY_SETFLG \
+								|| nfymode1 == $TNFY_SNDDTQ
+    # 通知処理のパラメータが2つの場合
+    numpar = 2
+    params[:epar1] = params[:par3]
+    params[:epar2] = params[:par4]
+  else
+    # 通知処理のパラメータが1つの場合
+    numpar = 1
+    params[:epar1] = params[:par2]
+    params[:epar2] = params[:par3]
+    params[:par2] = nil
+  end
+
+  # パラメータ数のチェック
+  if (numpar == 2 && par2.nil?) || (nfymode2 != 0 && params[:epar1].nil?) \
+								|| (nfymode2 == $TENFY_SETFLG && params[:epar2].nil?)
+    # パラメータが足りない場合
+    error_api(params, "too few parameters for nfymode `#{nfymode}' " \
+											"in %apiname of %#{objid}")
+  elsif (nfymode2 == 0 && !params[:epar1].nil?) \
+					|| (nfymode2 != $TENFY_SETFLG && !params[:epar2].nil?)
+    # パラメータが多すぎる場合
+    error_api(params, "too many parameters for nfymode `#{nfymode}' " \
+											"in %apiname of %#{objid}")
+  elsif nfymode1 == $TNFY_HANDLER && nfymode2 == 0		#［NGKI3721］
+    # カーネルドメインに属していない場合［NGKI3695］
+    if !params.has_key?(:domain) || params[:domain] != $TDOM_KERNEL
+      error_ercd("E_OACV", params, "nfymode `#{nfymode}' is not permitted " \
+								"in user domains in %apiname of %#{objid}")
+    end
+  else
+    if (nfymode1 == $TNFY_SETVAR && nfymode2 != 0) \
+         || (nfymode1 == $TNFY_INCVAR && nfymode2 != 0) \
+         || !([$TNFY_ACTTSK, $TNFY_WUPTSK, $TNFY_SIGSEM, $TNFY_SNDDTQ].include?(nfymode1))
+      # nfymodeの値が正しくない場合（E_PAR）［NGKI3730］
+      error_illegal_id("E_PAR", params, :nfymode, objid)
+    end
+
+    if !([0, $TENFY_SETVAR, $TENFY_INCVAR, $TENFY_ACTTSK, $TENFY_WUPTSK, $TENFY_SIGSEM, $TENFY_SETFLG,  $TENFY_SNDDTQ].include?(nfymode2))
+        # nfymodeの値が正しくない場合（E_PAR）［NGKI3730］
+        error_illegal_id("E_PAR", params, :nfymode, objid)
+    end
+  end
+
+  # Use pointer for object ID
+  if [$TNFY_ACTTSK, $TNFY_WUPTSK, $TNFY_SIGSEM, $TNFY_SETFLG, $TNFY_SNDDTQ].include?(nfymode1)
+    params[:par1] = "(intptr_t)&_module_id_#{params[:par1]}"
+  end
+  if [$TENFY_ACTTSK, $TENFY_WUPTSK, $TENFY_SIGSEM, $TENFY_SETFLG, $TENFY_SNDDTQ].include?(nfymode2)
+    params[:epar1] = "(intptr_t)&_module_id_#{params[:epar1]}"
+  end
+
+  # Set default value for par & epar
+  params[:par2] = 0 if params[:par2].nil?
+  params[:epar1] = 0 if params[:epar1].nil?
+  params[:epar2] = 0 if params[:epar2].nil?
+
+  # Generate IDs
+  cycid = params[:cycid].str
+  $moduleCfgH.add("extern ID _module_id_#{cycid};")
+  $moduleCfgH.add("#define #{cycid} ((const ID)(_module_id_#{cycid}))")
+  $moduleCfgC.add(<<EOS)
+ID _module_id_#{cycid} __attribute__((section (".module.text")));
+EOS
+}
+
+#
+# Generate '_module_ccyc_tab' and update '_module_cfg_tab'
+#
+if $cfgData[:CRE_CYC].size > 0
+$moduleCfgC.add("static const T_DML_CCYC _module_ccyc_tab[#{$cfgData[:CRE_CYC].size}] = {")
+$cfgData[:CRE_CYC].each_with_index{|(_, params), index|
+  $moduleCfgC.add("\t{ #{params[:cycatr]}, #{params[:cyctim]}, #{params[:cycphs]},  #{params[:nfymode]},  #{params[:par1]}, #{params[:par2]}, #{params[:epar1]}, #{params[:epar2]} },")
+  $modCfgTab.push({:sfncd => "TSFN_CRE_CYC", :argument => "&_module_ccyc_tab[#{index}]", :retvalptr => "&_module_id_#{params[:cycid]}"})
+}
+$moduleCfgC.add2("};")
+end

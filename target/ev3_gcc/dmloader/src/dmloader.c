@@ -9,10 +9,6 @@
 #include "kernel/dataqueue.h"
 #include "ev3.h"
 
-////// EV3RT specific part ////////////
-void destroy_all_ev3cyc();
-////// End of EV3RT specific part /////
-
 enum {
 	LDM_CAN_FREE,
 	LDM_CAN_RUNNING,
@@ -210,6 +206,92 @@ handle_module_cfg_tab(T_LDM_CAN *ldm_can) {
             }
             break; }
 
+		case TSFN_CRE_CYC: {
+            syslog(LOG_DEBUG, "%s(): MOD_CFG_ENTRY TSFN_CRE_CYC", __FUNCTION__);
+			assert(probe_ldm_memory(ent->argument, sizeof(T_DML_CCYC), ldm_can));
+			assert(probe_ldm_memory(ent->retvalptr, sizeof(ID), ldm_can));
+            T_DML_CCYC *p_dml_ccyc = (void*)ent->argument;
+
+            T_CCYC pk_ccyc;
+            pk_ccyc.cycatr = p_dml_ccyc->cycatr;
+            pk_ccyc.cyctim = p_dml_ccyc->cyctim;
+            pk_ccyc.cycphs = p_dml_ccyc->cycphs;
+            pk_ccyc.cycatr &= ~TA_STA;
+			assert(get_atrdomid(pk_ccyc.cycatr) == TDOM_SELF);
+			pk_ccyc.cycatr |= TA_DOM(ldm_can->domid);
+
+            pk_ccyc.nfyinfo.nfymode = p_dml_ccyc->nfymode;
+            switch (pk_ccyc.nfyinfo.nfymode & 0x0fU) {
+            case TNFY_SETVAR:
+                pk_ccyc.nfyinfo.nfy.setvar.p_var = (void*)p_dml_ccyc->par1;
+                pk_ccyc.nfyinfo.nfy.setvar.value = p_dml_ccyc->par2;
+                break;
+            case TNFY_INCVAR:
+                pk_ccyc.nfyinfo.nfy.incvar.p_var = (void*)p_dml_ccyc->par1;
+                break;
+            case TNFY_ACTTSK:
+                pk_ccyc.nfyinfo.nfy.acttsk.tskid = *(ID*)p_dml_ccyc->par1;
+                break;
+            case TNFY_WUPTSK:
+                pk_ccyc.nfyinfo.nfy.wuptsk.tskid = *(ID*)p_dml_ccyc->par1;
+                break;
+            case TNFY_SIGSEM:
+                pk_ccyc.nfyinfo.nfy.sigsem.semid = *(ID*)p_dml_ccyc->par1;
+                break;
+            case TNFY_SETFLG:
+                pk_ccyc.nfyinfo.nfy.setflg.flgid = *(ID*)p_dml_ccyc->par1;
+                pk_ccyc.nfyinfo.nfy.setflg.flgptn = p_dml_ccyc->par2;
+                break;
+            case TNFY_SNDDTQ:
+                pk_ccyc.nfyinfo.nfy.snddtq.dtqid = *(ID*)p_dml_ccyc->par1;
+                pk_ccyc.nfyinfo.nfy.snddtq.data = p_dml_ccyc->par2;
+                break;
+            default:
+                assert(false);
+                break;
+            }
+            switch (pk_ccyc.nfyinfo.nfymode & ~0x0fU) {
+            case 0:
+                break;
+		    case TENFY_SETVAR:
+                pk_ccyc.nfyinfo.enfy.setvar.p_var = (void*)p_dml_ccyc->epar1;
+			    break;
+            case TENFY_INCVAR:
+                pk_ccyc.nfyinfo.enfy.incvar.p_var = (void*)p_dml_ccyc->epar1;
+			    break;
+            case TENFY_ACTTSK:
+                pk_ccyc.nfyinfo.enfy.acttsk.tskid = *(ID*)p_dml_ccyc->epar1;
+                break;
+            case TENFY_WUPTSK:
+                pk_ccyc.nfyinfo.enfy.wuptsk.tskid = *(ID*)p_dml_ccyc->epar1;
+                break;
+            case TENFY_SIGSEM:
+                pk_ccyc.nfyinfo.enfy.sigsem.semid = *(ID*)p_dml_ccyc->epar1;
+                break;
+            case TENFY_SETFLG:
+                pk_ccyc.nfyinfo.enfy.setflg.flgid = *(ID*)p_dml_ccyc->epar1;
+                pk_ccyc.nfyinfo.enfy.setflg.flgptn = p_dml_ccyc->epar2;
+                break;
+            case TENFY_SNDDTQ:
+                pk_ccyc.nfyinfo.enfy.snddtq.dtqid = *(ID*)p_dml_ccyc->epar1;
+                break;
+            default:
+                assert(false);
+                break;
+            }
+
+			SVC_PERROR(ercd = acre_cyc(&pk_ccyc));
+			if(ercd > 0) {
+				// Store ID
+			    *(ID*)ent->retvalptr = ercd;
+#if defined(DEBUG) || 1
+			    syslog(LOG_NOTICE, "%s(): Cyclic (id = %d) created.", __FUNCTION__, *(ID*)ent->retvalptr);
+#endif
+
+			    ercd = E_OK;
+			}
+			break; }
+
 		default:
 		    syslog(LOG_ERROR, "%s(): Unsupported static function code %d.", __FUNCTION__, ent->sfncd);
 		    ercd = E_OBJ;
@@ -222,6 +304,7 @@ handle_module_cfg_tab(T_LDM_CAN *ldm_can) {
 	syslog(LOG_DEBUG, "%s(): text paddr: 0x%x, data paddr: 0x%x", __FUNCTION__, ldm_can->text_mempool, ldm_can->data_mempool);
 
 	// Acting stage
+    // TODO: NOTE: this stage may be too early. use HRP3 system mode to protect this?
     for(uint32_t i = 0; i < ldm_can->cfg_entry_num; ++i) {
         MOD_CFG_ENTRY *ent = &ldm_can->cfg_table[i];
         switch(ent->sfncd) {
@@ -231,6 +314,13 @@ handle_module_cfg_tab(T_LDM_CAN *ldm_can) {
         		ercd = act_tsk(*(ID*)ent->retvalptr);
             	assert(ercd == E_OK);
         	}
+            break; }
+
+        case TSFN_CRE_CYC: {
+            T_DML_CCYC *p_dml_ccyc = (void*)ent->argument;
+            if (p_dml_ccyc->cycatr & TA_STA) {
+                SVC_PERROR(sta_cyc(*(ID*)ent->retvalptr));
+            }
             break; }
 
         case TSFN_CRE_SEM:
@@ -327,12 +417,6 @@ ER _dmloader_rmv_ldm(ID ldm_can_id) {
     	goto error_exit;
     }
 
-    syslog(LOG_NOTICE, "no destroy_all_ev3cyc in HRP3");
-#if 0 // TODO: support in HRP3
-    // Destroy all EV3CYCs
-    destroy_all_ev3cyc();
-#endif
-
     // Deletion
     for(uint32_t i = 0; i < ldm_can->cfg_entry_num && ercd == E_OK; ++i) {
         MOD_CFG_ENTRY *ent = &ldm_can->cfg_table[i];
@@ -379,6 +463,13 @@ ER _dmloader_rmv_ldm(ID ldm_can_id) {
         	ercd = del_mtx(mtxid);
         	assert(ercd == E_OK);
         	break; }
+
+        case TSFN_CRE_CYC: {
+            syslog(LOG_DEBUG, "%s(): RMV MOD_CFG_ENTRY TSFN_CRE_CYC", __FUNCTION__);
+            ID cycid = *(ID*)ent->retvalptr;
+            stp_cyc(cycid);
+            SVC_PERROR(ercd = del_cyc(cycid));
+            break; }
 
         default:
             syslog(LOG_ERROR, "%s(): Unsupported static function code %d.", __FUNCTION__, ent->sfncd);

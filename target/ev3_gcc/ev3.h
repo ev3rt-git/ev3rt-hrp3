@@ -85,6 +85,7 @@
 #define TMAX_APP_DTQ_NUM     (16)          //!< Maximum number of data queues in a loadable application module
 #define TMAX_APP_PDQ_NUM     (16)          //!< Maximum number of priority data queues in a loadable application module
 #define TMAX_APP_MTX_NUM     (16)          //!< Maximum number of mutexes in a loadable application module
+#define TMAX_APP_CYC_NUM     (16)          //!< Maximum number of cyclic handlers in a loadable application module
 #define TMAX_APP_TEXT_SIZE   (1024 * 1024) //!< Maximum size of the text section in a loadable application module
 #define TMAX_APP_DATA_SIZE   (1024 * 1024) //!< Maximum size of the data section in a loadable application module
 #define TMAX_APP_BINARY_SIZE (1024 * 1024) //!< Maximum size of a loadable application module's binary file
@@ -98,7 +99,6 @@
  * Miscellaneous configuration
  */
 #define FORCE_SHUTDOWN_TIMEOUT (500)  //!< Timeout in milliseconds of force shutdown feature by pressing BACK+LEFT+RIGHT buttons
-//#define TMAX_EV3_CYC_NUM       (16)   //!< Maximum number of EV3_CRE_CYC in a user application // TODO: replace w/ HRP3 ver CYC
 
 #ifndef TOPPERS_MACRO_ONLY
 
