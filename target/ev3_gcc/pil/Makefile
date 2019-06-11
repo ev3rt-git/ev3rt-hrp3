@@ -6,6 +6,5 @@
 #
 
 APPL_COBJS += driver_interface_brick.o \
-	driver_interface_bluetooth.o \
 	driver_interface_filesys.o \
 	driver_interface_sound.o

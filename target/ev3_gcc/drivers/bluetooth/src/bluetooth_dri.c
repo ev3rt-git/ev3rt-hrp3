@@ -234,6 +234,14 @@ inline void btstack_db_append(const char *addr, const char *link_key) {
 #endif
 }
 
+inline void btstack_spp_master_lock() {
+    SVC_PERROR(loc_mtx(BT_SPP_MASTER_MTX));
+}
+
+inline void btstack_spp_master_unlock() {
+    SVC_PERROR(unl_mtx(BT_SPP_MASTER_MTX));
+}
+
 void
 btstack_printf(const char *format, ...)
 {
@@ -250,8 +258,21 @@ btstack_printf(const char *format, ...)
  * Implementation of extended service calls
  */
 
-ER _spp_master_test_connect(const uint8_t addr[6], const char *pin) {
-    if (!spp_master_test_start_connection(addr, pin)) return E_CTX;
-    while (spp_master_test_is_connecting()) dly_tsk(10U * 1000U);
+ER_UINT extsvc_spp_master_reset(intptr_t par1, intptr_t par2, intptr_t par3, intptr_t par4, intptr_t par5, ID cdmid) {
+    btstack_spp_master_reset();
     return E_OK;
 }
+
+ER_UINT extsvc_spp_master_connect(intptr_t addr, intptr_t pin, intptr_t service, intptr_t par4, intptr_t par5, ID cdmid) {
+	if(!EXTSVC_PROBE_MEM_READ_SIZE(addr, BTSTACK_BD_ADDR_LEN))
+		return E_MACV;
+	if(!EXTSVC_PROBE_MEM_READ_SIZE(pin, BTSTACK_PIN_MAX_LEN))
+		return E_MACV;
+	if(!EXTSVC_PROBE_MEM_READ_SIZE(service, BTSTACK_SERVICE_MAX_LEN))
+		return E_MACV;
+    if (btstack_spp_master_connect((uint8_t *)addr, (char *)pin, (char *)service)) {
+        return E_OK;
+    }
+    return E_CTX;
+}
+
