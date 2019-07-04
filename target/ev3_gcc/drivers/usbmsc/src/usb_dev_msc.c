@@ -41,6 +41,7 @@
 
 #include <t_syslog.h>
 #include "csl.h"
+#include "kernel_cfg.h"
 
 //*****************************************************************************
 //
@@ -62,6 +63,17 @@ unsigned int g_bufferIndex = 0;
 // From 'usbmsc_media_functions.c'
 extern const tMSCDMedia usbmsc_media_functions_dummy;
 
+int _usblib_debug_mode = 0;
+static void debug_gpio_handler() {
+    if (!_usblib_debug_mode) {
+        syslog(LOG_EMERG, "USBLIB DEBUG MODE IS ON", __FUNCTION__);
+        _usblib_debug_mode = 1;
+    } else {
+        syslog(LOG_EMERG, "USBLIB DEBUG MODE IS OFF", __FUNCTION__);
+        _usblib_debug_mode = 1;
+    }
+}
+
 static void initialize(intptr_t unused) {
 	// Initialize USB OTG
     HWREG(CFGCHIP2_USBPHYCTRL) &= ~SYSCFG_CFGCHIP2_USB0OTGMODE;
@@ -81,11 +93,14 @@ static void initialize(intptr_t unused) {
 	}
 #endif
 
-//    dump_usbmsc();
+    // FOR DEBUG: use button to toggle debug mode
+    //request_gpio_irq(GP6_6/* LEFT BUTTON */, TRIG_RIS_EDGE, debug_gpio_handler, NULL);
 
 #if defined(DEBUG_USBMSC)
     syslog(LOG_EMERG, "usbmsc_dri initialized.");
 #endif
+
+    SVC_PERROR(act_tsk(USBMSC_TSK));
 }
 
 void initialize_usbmsc_dri(intptr_t unused) {

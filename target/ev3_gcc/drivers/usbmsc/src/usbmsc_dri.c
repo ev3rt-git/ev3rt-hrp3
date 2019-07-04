@@ -76,6 +76,7 @@ unsigned int usbmsc_event_callback(void *pvCBData, unsigned int ulEvent, unsigne
 
 void usbmsc_task(intptr_t unused) {
 	g_sMSCDeviceInfo.sCallbacks.pfnSuspendHandler = g_sMSCDeviceInfo.sCallbacks.pfnDisconnectHandler;
+    SVC_PERROR(ena_int(SYS_INT_USB0));
 
 	ER ercd;
 	FLGPTN flgptn;
