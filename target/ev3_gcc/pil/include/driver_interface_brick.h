@@ -169,27 +169,6 @@ extern ER _button_set_on_clicked(brickbtn_t button, ISR handler, intptr_t exinf)
  */
 extern ER _brick_misc_command(misccmd_t misccmd, intptr_t exinf);
 
-/**
- * Create an EV3 cyclic handler.
- * @retval E_OK
- * @retval E_NOID
- */
-#if 0 // TODO: support HRP3 DCRE
-extern ER_ID __ev3_acre_cyc(const T_CCYC *pk_ccyc);
-#endif
-
-/**
- * Start an EV3 cyclic handler.
- * @retval E_OK
- */
-extern ER __ev3_sta_cyc(ID ev3cycid);
-
-/**
- * Start an EV3 cyclic handler.
- * @retval E_OK
- */
-extern ER __ev3_stp_cyc(ID ev3cycid);
-
 extern ER _start_i2c_transaction(int port, uint_t addr, const uint8_t *writebuf, uint_t writelen, uint_t readlen, ID cdmid);
 
 /**
@@ -225,26 +204,6 @@ static inline ER brick_misc_command(misccmd_t misccmd, intptr_t exinf) {
 	return ercd;
 }
 
-#if 0 // TODO: support HRP3 DCRE
-static inline ER_ID _ev3_acre_cyc(const T_CCYC *pk_ccyc) {
-	ER_UINT ercd = cal_svc(TFN_EV3_ACRE_CYC, (intptr_t)pk_ccyc, (intptr_t)0, (intptr_t)0, 0, 0);
-	assert(ercd != E_NOMEM);
-	return ercd;
-}
-#endif
-
-static inline ER_ID _ev3_sta_cyc(ID ev3cycid) {
-	ER_UINT ercd = cal_svc(TFN_EV3_STA_CYC, (intptr_t)ev3cycid, (intptr_t)0, (intptr_t)0, 0, 0);
-	assert(ercd != E_NOMEM);
-	return ercd;
-}
-
-static inline ER_ID _ev3_stp_cyc(ID ev3cycid) {
-	ER_UINT ercd = cal_svc(TFN_EV3_STP_CYC, (intptr_t)ev3cycid, (intptr_t)0, (intptr_t)0, 0, 0);
-	assert(ercd != E_NOMEM);
-	return ercd;
-}
-
 static inline ER_ID start_i2c_transaction(int port, uint_t addr, void *writebuf, uint_t writelen, uint_t readlen) {
 	ER_UINT ercd = cal_svc(TFN_START_I2C_TRANS, (intptr_t)port, (intptr_t)addr, (intptr_t)writebuf, (intptr_t)writelen, (intptr_t)readlen);
 	assert(ercd != E_NOMEM);
@@ -257,9 +216,6 @@ static inline ER_ID start_i2c_transaction(int port, uint_t addr, void *writebuf,
 extern ER_UINT extsvc_fetch_brick_info(intptr_t p_brickinfo, intptr_t par2, intptr_t par3, intptr_t par4, intptr_t par5, ID cdmid);
 extern ER_UINT extsvc_button_set_on_clicked(intptr_t button, intptr_t handler, intptr_t exinf, intptr_t par4, intptr_t par5, ID cdmid);
 extern ER_UINT extsvc_brick_misc_command(intptr_t misccmd, intptr_t exinf, intptr_t par3, intptr_t par4, intptr_t par5, ID cdmid);
-extern ER_UINT extsvc__ev3_acre_cyc(intptr_t pk_ccyc, intptr_t par2, intptr_t par3, intptr_t par4, intptr_t par5, ID cdmid);
-extern ER_UINT extsvc__ev3_sta_cyc(intptr_t ev3cycid, intptr_t par2, intptr_t par3, intptr_t par4, intptr_t par5, ID cdmid);
-extern ER_UINT extsvc__ev3_stp_cyc(intptr_t ev3cycid, intptr_t par2, intptr_t par3, intptr_t par4, intptr_t par5, ID cdmid);
 extern ER_UINT extsvc_start_i2c_transaction(intptr_t port, intptr_t addr, intptr_t writebuf, intptr_t writelen, intptr_t readlen, ID cdmid);
 
 #if 0 // Legacy code
