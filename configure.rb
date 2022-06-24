@@ -6,7 +6,7 @@
 # 
 #  Copyright (C) 2001-2003 by Embedded and Real-Time Systems Laboratory
 #                              Toyohashi Univ. of Technology, JAPAN
-#  Copyright (C) 2006-2018 by Embedded and Real-Time Systems Laboratory
+#  Copyright (C) 2006-2020 by Embedded and Real-Time Systems Laboratory
 #              Graduate School of Information Science, Nagoya Univ., JAPAN
 # 
 #  上記著作権者は，以下の(1)〜(4)の条件を満たす場合に限り，本ソフトウェ
@@ -38,13 +38,12 @@
 #  アの利用により直接的または間接的に生じたいかなる損害に関しても，そ
 #  の責任を負わない．
 # 
-#  $Id: configure.rb 650 2019-01-14 07:57:07Z ertl-hiro $
+#  $Id: configure.rb 985 2020-07-18 08:37:24Z ertl-hiro $
 # 
 
 Encoding.default_external = 'utf-8'
 require "optparse"
 require "fileutils"
-require "shell"
 
 #  オプションの定義
 #
@@ -81,7 +80,8 @@ require "shell"
 #  -G <tecsgen>			TECSジェネレータ（tecsgen）のパス名
 #  -o <options>			コンパイルオプション（COPTSに追加）
 #  -O <options>			シンボル定義オプション（CDEFSに追加）
-#  -k <options>			リンカオプション（LDFLAGS等に追加）
+#  -k <options>			リンカオプション（LDFLAGSに追加）
+#  -b <options>			リンカオプション（LIBSに追加）
 
 #  使用例(1)
 #
@@ -131,6 +131,7 @@ $tecsgen = nil
 $copts = []
 $cdefs = []
 $ldflags = []
+$libs = []
 
 #
 #  オプションの処理
@@ -166,7 +167,7 @@ OptionParser.new(nil, 22) do |opt|
   opt.on("-L kernel_lib",	"directory of built kernel library") do |val|
     $kernel_lib = val
   end
-  opt.on("-f", "each function is complied separately in kernel") do |val|
+  opt.on("-f", "each function is compiled separately in kernel") do |val|
     $kernel_funcobjs = "true"
   end
   opt.on("-D srcdir",		"path of source code directory") do |val|
@@ -211,6 +212,9 @@ OptionParser.new(nil, 22) do |opt|
   opt.on("-k options",		"linker options") do |val|
     $ldflags += val.split(/\s+/)
   end
+  opt.on("-b options",		"linker options for linking libraries") do |val|
+    $libs += val.split(/\s+/)
+  end
   opt.parse!(ARGV)
 end
 
@@ -238,16 +242,16 @@ $applobjs.unshift($applname + ".o") if !$option_t
 $bannerobj ||= ($omit_tecs == "") ? "tBannerMain.o" : "banner.o"
 if $srcdir.nil?
   # ソースディレクトリ名を取り出す
-  if /(.*)\/configure/ =~ $0
+  if /^(.*)\/configure/ =~ $0
     $srcdir = $1
   else
-    $srcdir = Shell.new.cwd
+    $srcdir = Dir.pwd
   end
 end
 if /^\// =~ $srcdir
   $srcabsdir = $srcdir
 else
-  $srcabsdir = Shell.new.cwd + "/" + $srcdir
+  $srcabsdir = Dir.pwd + "/" + $srcdir
 end
 $tempmakefile ||= $srcdir + "/sample/Makefile"
 $tecsdir ||= "\$(SRCDIR)/tecsgen"
@@ -301,6 +305,7 @@ $vartable["TECSGEN"] = $tecsgen
 $vartable["COPTS"] = $copts.join(" ")
 $vartable["CDEFS"] = $cdefs.join(" ")
 $vartable["LDFLAGS"] = $ldflags.join(" ")
+$vartable["LIBS"] = $libs.join(" ")
 $vartable["OBJEXT"] = GetObjectExtension()
 ARGV.each do |arg|
   if /^([A-Za-z0-9_]+)\s*\=\s*(.*)$/ =~ arg
@@ -343,7 +348,7 @@ end
 convert($tempmakefile, "Makefile")
 
 #
-#  依存関係ファイルのディレクトリの作成
+#  中間オブジェクトファイルと依存関係ファイルを置くディレクトリの作成
 #
 if !File.directory?($objdir)
   Dir.mkdir($objdir)
