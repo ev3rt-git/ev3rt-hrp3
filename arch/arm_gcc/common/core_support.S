@@ -420,6 +420,8 @@ ALABEL(start_utask_r)
 	ldr		r0, [r2,#TINIB_exinf]	/* exinfをパラメータに */
 	ldr		r1, [r2, #TINIB_task]	/* タスク起動番地 → r1 */
 #if __TARGET_ARCH_ARM < 6
+	msr		cpsr_c, #(CPSR_SVC_MODE AOR CPSR_FIQ_IRQ_BIT)
+									/* FIQとIRQの両方を禁止（ret_svc_1参照）*/
 	msr		spsr_c, #(CPSR_USER_MODE AOR CPSR_UNLOCK)
 	push	{r1}					/* タスク起動番地をスタックに積む */
 	ldmfd	sp!, {pc}^				/* タスク起動番地へ分岐 */
@@ -741,6 +743,8 @@ ALABEL(irq_handler_5)
 	add		sp, sp, r1
 
 #if __TARGET_ARCH_ARM < 6
+	msr		cpsr_c, #(CPSR_SVC_MODE AOR CPSR_FIQ_IRQ_BIT)
+									/* FIQとIRQの両方を禁止（ret_svc_1参照）*/
 	pop		{r0}					/* 戻り先のcpsrをspsrに設定 */
 	msr		spsr_cxsf, r0
 	ldmfd	sp!, {r0-r5,r12,lr,pc}^	/* コンテキストの復帰 */
@@ -1437,6 +1441,8 @@ ALABEL(exc_handler_5)
 	add		sp, sp, #12				/* スタック上の情報を捨てる */
 
 #if __TARGET_ARCH_ARM < 6
+	msr		cpsr_c, #(CPSR_SVC_MODE AOR CPSR_FIQ_IRQ_BIT)
+									/* FIQとIRQの両方を禁止（ret_svc_1参照）*/
 	pop		{r0}					/* 戻り先のcpsrをspsrに設定 */
 	msr		spsr_cxsf, r0
 	ldmfd	sp!, {r0-r5,r12,lr,pc}^	/* コンテキストの復帰 */
@@ -1609,6 +1615,13 @@ ALABEL(ret_svc)
 	 */
 ALABEL(ret_svc_1)
 #if __TARGET_ARCH_ARM < 6
+	/*
+	 *  spsrを設定してから例外復帰するまでの間に割込み（FIQを含む）が
+	 *  入ると，その出口処理でspsrが上書きされるため，FIQとIRQの両方を
+	 *  禁止する．戻り先のcpsrはスタック上の値から復帰するため，呼出し
+	 *  元の割込み状態には影響しない．
+	 */
+	msr		cpsr_c, #(CPSR_SVC_MODE AOR CPSR_FIQ_IRQ_BIT)
 	pop		{lr}					/* 戻り先のcpsrをspsrに設定 */
 	msr		spsr_cxsf, lr
 	ldmfd	sp!, {pc}^				/* コンテキストの復帰 */
